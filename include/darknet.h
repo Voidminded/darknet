@@ -4,6 +4,9 @@
 #include <stdio.h>
 #include <string.h>
 #include <pthread.h>
+#include <search.h>
+#include <string.h>
+#include <stdio.h>
 
 #define SECRET_NUM -1234
 extern int gpu_index;
@@ -508,12 +511,22 @@ typedef struct{
 } data;
 
 typedef enum {
-    CLASSIFICATION_DATA, DETECTION_DATA, CAPTCHA_DATA, REGION_DATA, IMAGE_DATA, COMPARE_DATA, WRITING_DATA, SWAG_DATA, TAG_DATA, OLD_CLASSIFICATION_DATA, STUDY_DATA, DET_DATA, SUPER_DATA, LETTERBOX_DATA, REGRESSION_DATA, SEGMENTATION_DATA
+    CLASSIFICATION_DATA, DETECTION_DATA, CAPTCHA_DATA, REGION_DATA, IMAGE_DATA, COMPARE_DATA, WRITING_DATA, SWAG_DATA, TAG_DATA, OLD_CLASSIFICATION_DATA, STUDY_DATA, DET_DATA, SUPER_DATA, LETTERBOX_DATA, REGRESSION_DATA, SEGMENTATION_DATA, TRACKER_DATA
 } data_type;
+
+//Added by sepehr
+typedef struct
+{
+      char* folder;
+      char** frames;
+} strListMap;
+
+int mapFind(const void *l, const void *r);
 
 typedef struct load_args{
     int threads;
     char **paths;
+    void *sequences;
     char *path;
     int n;
     int m;
