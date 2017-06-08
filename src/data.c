@@ -39,6 +39,17 @@ char **get_random_paths_indexes(char **paths, int n, int m, int *indexes)
 }
 */
 
+void get_random_sequence( char **paths, int s, int m, char **out_paths, int b)
+{
+  int i;
+  pthread_mutex_lock(&mutex);
+  int index = rand()%(m-s);
+  for(i = 0; i < s; ++i){
+    out_paths[i+b] = paths[index+i];
+  }
+  pthread_mutex_unlock(&mutex);
+}
+
 char **get_random_paths(char **paths, int n, int m)
 {
     char **random_paths = calloc(n, sizeof(char*));
@@ -678,6 +689,99 @@ data load_data_region(int n, char **paths, int m, int w, int h, int size, int cl
     return d;
 }
 
+data load_data_track(int n, char **folders, void* frames, int m, int steps, int w, int h, int size, int classes, float jitter, float hue, float saturation, float exposure)
+{
+  char **random_folders = get_random_paths(folders, n, m);
+  char **random_paths = calloc(n*steps, sizeof(char*));
+
+  int i,j;
+
+  for( i = 0; i < n; i++)
+  {
+    strListMap *random_seq = malloc( sizeof( strListMap));
+    random_seq->folder = random_folders[i];
+    void *r = tfind( random_seq, frames, mapFind);
+    get_random_sequence( (*(strListMap**)r)->frames, steps, (*(strListMap**)r)->count, random_paths, i*steps);
+    free( random_seq);
+    free( r);
+  }
+  data d = {0};
+  d.shallow = 0;
+
+  d.X.rows = n*steps;
+  d.X.vals = calloc(d.X.rows, sizeof(float*));
+  d.X.cols = h*w*3;
+
+
+  int k = size*size*(5+classes);
+  d.y = make_matrix(n, k);
+  for(i = 0; i < n; ++i){
+
+      int pleft_start  = rand_uniform(-jitter, jitter);
+      int pright_start = rand_uniform(-jitter, jitter);
+      int ptop_start   = rand_uniform(-jitter, jitter);
+      int pbot_start   = rand_uniform(-jitter, jitter);
+
+      int pleft_end  = rand_uniform(-jitter, jitter);
+      int pright_end = rand_uniform(-jitter, jitter);
+      int ptop_end   = rand_uniform(-jitter, jitter);
+      int pbot_end   = rand_uniform(-jitter, jitter);
+
+      float dhue_start = rand_uniform(-hue, hue);
+      float dsat_start = rand_scale(saturation);
+      float dexp_start = rand_scale(exposure);
+
+      float dhue_end = rand_uniform(-hue, hue);
+      float dsat_end = rand_scale(saturation);
+      float dexp_end = rand_scale(exposure);
+
+      int flip = rand()%2;
+
+      for( j=0; j<steps; ++j)
+      {
+        image orig = load_image_color(random_paths[i*steps+j], 0, 0);
+
+        int oh = orig.h;
+        int ow = orig.w;
+        pleft_start  *= ow;
+        pright_start *= ow;
+        ptop_start   *= oh;
+        pbot_start   *= oh;
+
+        pleft_end  *= ow;
+        pright_end *= ow;
+        ptop_end   *= oh;
+        pbot_end   *= oh;
+
+        int swidth =  ow - (j*pleft_start + (steps-j)*pleft_end)/steps - (j*pright_start + (steps-j)*pright_end)/steps;
+        int sheight = oh - (j*ptop_start + (steps-j)*ptop_end)/steps - (j*pbot_start + (steps-j)*pbot_end)/steps;
+
+        float sx = (float)swidth  / ow;
+        float sy = (float)sheight / oh;
+
+        image cropped = crop_image(orig, (j*pleft_start + (steps-j)*pleft_end)/steps, (j*ptop_start + (steps-j)*ptop_end)/steps, swidth, sheight);
+
+        float dx = ((float)(j*pleft_start + (steps-j)*pleft_end)/(steps*ow))/sx;
+        float dy = ((float)(j*ptop_start + (steps-j)*ptop_end)/(steps*oh))/sy;
+
+        image sized = resize_image(cropped, w, h);
+        if(flip) flip_image(sized);
+
+        distort_image(sized, (j*dhue_start + (steps-j)*dhue_end)/steps, (j*dsat_start + (steps-j)*dsat_end)/steps, (j*dexp_start + (steps-j)*dexp_end)/steps);
+
+        d.X.vals[i] = sized.data;
+
+        fill_truth_region(random_paths[i*steps+j], d.y.vals[i*steps+j], classes, size, flip, dx, dy, 1./sx, 1./sy);
+
+        free_image(orig);
+        free_image(cropped);
+      }
+  }
+  free(random_paths);
+  free(random_folders);
+  return d;
+}
+
 data load_data_compare(int n, char **paths, int m, int classes, int w, int h)
 {
     if(m) paths = get_random_paths(paths, 2*n, m);
@@ -884,7 +988,7 @@ void *load_thread(void *ptr)
     } else if (a.type == TAG_DATA){
         *a.d = load_data_tag(a.paths, a.n, a.m, a.classes, a.min, a.max, a.size, a.angle, a.aspect, a.hue, a.saturation, a.exposure);
     } else if (a.type == TRACKER_DATA){
-//        *a.d = load_data_track(a.n, a.paths, a.m, a.w, a.h, a.num_boxes, a.classes, a.jitter, a.hue, a.saturation, a.exposure);
+        *a.d = load_data_track(a.n, a.paths, a.sequences, a.m, a.steps, a.w, a.h, a.num_boxes, a.classes, a.jitter, a.hue, a.saturation, a.exposure);
     }
     free(ptr);
     return 0;

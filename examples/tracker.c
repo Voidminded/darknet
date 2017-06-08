@@ -16,6 +16,7 @@ void test_tracker()
     strListMap *seq = malloc(sizeof(strListMap));
     seq->folder = folder;
     seq->frames = frame_paths;
+    seq->count = frames->size;
     tsearch(seq, args.sequences, mapFind); /* insert */
   }
 }
