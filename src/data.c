@@ -689,99 +689,6 @@ data load_data_region(int n, char **paths, int m, int w, int h, int size, int cl
     return d;
 }
 
-data load_data_track(int n, char **folders, void* frames, int m, int steps, int w, int h, int size, int classes, float jitter, float hue, float saturation, float exposure)
-{
-  char **random_folders = get_random_paths(folders, n, m);
-  char **random_paths = calloc(n*steps, sizeof(char*));
-
-  int i,j;
-
-  for( i = 0; i < n; i++)
-  {
-    strListMap *random_seq = malloc( sizeof( strListMap));
-    random_seq->folder = random_folders[i];
-    void *r = tfind( random_seq, frames, mapFind);
-    get_random_sequence( (*(strListMap**)r)->frames, steps, (*(strListMap**)r)->count, random_paths, i*steps);
-    free( random_seq);
-    free( r);
-  }
-  data d = {0};
-  d.shallow = 0;
-
-  d.X.rows = n*steps;
-  d.X.vals = calloc(d.X.rows, sizeof(float*));
-  d.X.cols = h*w*3;
-
-
-  int k = size*size*(5+classes);
-  d.y = make_matrix(n, k);
-  for(i = 0; i < n; ++i){
-
-      int pleft_start  = rand_uniform(-jitter, jitter);
-      int pright_start = rand_uniform(-jitter, jitter);
-      int ptop_start   = rand_uniform(-jitter, jitter);
-      int pbot_start   = rand_uniform(-jitter, jitter);
-
-      int pleft_end  = rand_uniform(-jitter, jitter);
-      int pright_end = rand_uniform(-jitter, jitter);
-      int ptop_end   = rand_uniform(-jitter, jitter);
-      int pbot_end   = rand_uniform(-jitter, jitter);
-
-      float dhue_start = rand_uniform(-hue, hue);
-      float dsat_start = rand_scale(saturation);
-      float dexp_start = rand_scale(exposure);
-
-      float dhue_end = rand_uniform(-hue, hue);
-      float dsat_end = rand_scale(saturation);
-      float dexp_end = rand_scale(exposure);
-
-      int flip = rand()%2;
-
-      for( j=0; j<steps; ++j)
-      {
-        image orig = load_image_color(random_paths[i*steps+j], 0, 0);
-
-        int oh = orig.h;
-        int ow = orig.w;
-        pleft_start  *= ow;
-        pright_start *= ow;
-        ptop_start   *= oh;
-        pbot_start   *= oh;
-
-        pleft_end  *= ow;
-        pright_end *= ow;
-        ptop_end   *= oh;
-        pbot_end   *= oh;
-
-        int swidth =  ow - (j*pleft_start + (steps-j)*pleft_end)/steps - (j*pright_start + (steps-j)*pright_end)/steps;
-        int sheight = oh - (j*ptop_start + (steps-j)*ptop_end)/steps - (j*pbot_start + (steps-j)*pbot_end)/steps;
-
-        float sx = (float)swidth  / ow;
-        float sy = (float)sheight / oh;
-
-        image cropped = crop_image(orig, (j*pleft_start + (steps-j)*pleft_end)/steps, (j*ptop_start + (steps-j)*ptop_end)/steps, swidth, sheight);
-
-        float dx = ((float)(j*pleft_start + (steps-j)*pleft_end)/(steps*ow))/sx;
-        float dy = ((float)(j*ptop_start + (steps-j)*ptop_end)/(steps*oh))/sy;
-
-        image sized = resize_image(cropped, w, h);
-        if(flip) flip_image(sized);
-
-        distort_image(sized, (j*dhue_start + (steps-j)*dhue_end)/steps, (j*dsat_start + (steps-j)*dsat_end)/steps, (j*dexp_start + (steps-j)*dexp_end)/steps);
-
-        d.X.vals[i] = sized.data;
-
-        fill_truth_region(random_paths[i*steps+j], d.y.vals[i*steps+j], classes, size, flip, dx, dy, 1./sx, 1./sy);
-
-        free_image(orig);
-        free_image(cropped);
-      }
-  }
-  free(random_paths);
-  free(random_folders);
-  return d;
-}
-
 data load_data_compare(int n, char **paths, int m, int classes, int w, int h)
 {
     if(m) paths = get_random_paths(paths, 2*n, m);
@@ -949,6 +856,93 @@ data load_data_detection(int n, char **paths, int m, int w, int h, int boxes, in
     }
     free(random_paths);
     return d;
+}
+
+data load_data_track(int n, char **folders, void* frames, int m, int steps, int w, int h, int boxes, int classes, float jitter, float hue, float saturation, float exposure)
+{
+  char **random_folders = get_random_paths(folders, n, m);
+  char **random_paths = calloc(n*steps, sizeof(char*));
+
+  int i,j;
+
+  for( i = 0; i < n; i++)
+  {
+    strListMap *random_seq = malloc( sizeof( strListMap));
+    random_seq->folder = random_folders[i];
+    void *r = tfind( random_seq, frames, mapFind);
+    get_random_sequence( (*(strListMap**)r)->frames, steps, (*(strListMap**)r)->count, random_paths, i*steps);
+    free( random_seq);
+    free( r);
+  }
+  data d = {0};
+  d.shallow = 0;
+
+  d.X.rows = n*steps;
+  d.X.vals = calloc(d.X.rows, sizeof(float*));
+  d.X.cols = h*w*3;
+
+  d.y = make_matrix( n*steps, 5*boxes);
+  for(i = 0; i < n; ++i){
+
+      int pw_start  = rand_uniform(-jitter, jitter);
+      int ph_start   = rand_uniform(-jitter, jitter);
+
+      int pw_end  = rand_uniform(-jitter, jitter);
+      int ph_end   = rand_uniform(-jitter, jitter);
+
+      float dhue_start = rand_uniform(-hue, hue);
+      float dsat_start = rand_scale(saturation);
+      float dexp_start = rand_scale(exposure);
+
+      float dhue_end = rand_uniform(-hue, hue);
+      float dsat_end = rand_scale(saturation);
+      float dexp_end = rand_scale(exposure);
+
+      int flip = rand()%2;
+      float scale = rand_uniform(.25, 2);
+
+      float dx_c = (float)rand()/RAND_MAX;
+      float dy_c = (float)rand()/RAND_MAX;
+
+      for( j=0; j<steps; ++j)
+      {
+        image orig = load_image_color(random_paths[i*steps+j], 0, 0);
+        image sized = make_image(w, h, orig.c);
+        fill_image(sized, .5);
+
+        float dw = (j *pw_start +(steps-j) *pw_end) *orig.w /steps;
+        float dh = (j *ph_start +(steps-j) *ph_end) *orig.h /steps;
+
+        float new_ar = (orig.w + dw) / (orig.h + dh);
+
+        float nw, nh;
+        if(new_ar < 1){
+            nh = scale * h;
+            nw = nh * new_ar;
+        } else {
+            nw = scale * w;
+            nh = nw / new_ar;
+        }
+
+        float dx = dx_c *(w - nw);
+        float dy = dy_c *(h - nh);
+
+        place_image(orig, nw, nh, dx, dy, sized);
+
+        if(flip) flip_image(sized);
+
+        distort_image(sized, (j*dhue_start + (steps-j)*dhue_end)/steps, (j*dsat_start + (steps-j)*dsat_end)/steps, (j*dexp_start + (steps-j)*dexp_end)/steps);
+
+        d.X.vals[i] = sized.data;
+
+        fill_truth_detection(random_paths[i*steps+j], boxes, d.y.vals[i*steps+j], classes, flip, -dx/w, -dy/h, nw/w, nh/h);
+
+        free_image(orig);
+      }
+  }
+  free(random_paths);
+  free(random_folders);
+  return d;
 }
 
 void *load_thread(void *ptr)
