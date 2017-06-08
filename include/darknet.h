@@ -517,8 +517,9 @@ typedef enum {
 //Added by sepehr
 typedef struct
 {
-      char* folder;
-      char** frames;
+    char* folder;
+    char** frames;
+    int count;
 } strListMap;
 
 int mapFind(const void *l, const void *r);
@@ -530,6 +531,7 @@ typedef struct load_args{
     char *path;
     int n;
     int m;
+    int steps;
     char **labels;
     int h;
     int w;
