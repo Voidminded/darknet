@@ -43,11 +43,12 @@ void get_random_sequence( char **paths, int s, int m, char **out_paths, int b)
 {
   int i;
   pthread_mutex_lock(&mutex);
-  int index = rand()%(m-s);
+  int index = rand()%(m-s-2);
   for(i = 0; i < s; ++i){
     out_paths[i+b] = paths[index+i];
   }
   pthread_mutex_unlock(&mutex);
+
 }
 
 char **get_random_paths(char **paths, int n, int m)
@@ -865,15 +866,17 @@ data load_data_track(int n, char **folders, void* frames, int m, int steps, int 
 
   int i,j;
 
+  strListMap *random_seq = malloc( sizeof( strListMap));
+  void *r = 0;
   for( i = 0; i < n; i++)
   {
-    strListMap *random_seq = malloc( sizeof( strListMap));
     random_seq->folder = random_folders[i];
-    void *r = tfind( random_seq, frames, mapFind);
+    r = tfind( random_seq, &frames, compar);
     get_random_sequence( (*(strListMap**)r)->frames, steps, (*(strListMap**)r)->count, random_paths, i*steps);
-    free( random_seq);
-    free( r);
   }
+  free( random_seq);
+  free( r);
+
   data d = {0};
   d.shallow = 0;
 
@@ -903,7 +906,6 @@ data load_data_track(int n, char **folders, void* frames, int m, int steps, int 
 
       float dx_c = (float)rand()/RAND_MAX;
       float dy_c = (float)rand()/RAND_MAX;
-
       for( j=0; j<steps; ++j)
       {
         image orig = load_image_color(random_paths[i*steps+j], 0, 0);
@@ -947,7 +949,6 @@ data load_data_track(int n, char **folders, void* frames, int m, int steps, int 
 
 void *load_thread(void *ptr)
 {
-    //printf("Loading data: %d\n", rand());
     load_args a = *(struct load_args*)ptr;
     if(a.exposure == 0) a.exposure = 1;
     if(a.saturation == 0) a.saturation = 1;
@@ -1243,6 +1244,7 @@ void get_next_batch(data d, int n, int offset, float *X, float *y)
     int j;
     for(j = 0; j < n; ++j){
         int index = offset + j;
+        printf(" X+j*d.X.cols : %f , index : %d , j : %d , offset : %d\n", X+j*d.X.cols, index, j, offset);
         memcpy(X+j*d.X.cols, d.X.vals[index], d.X.cols*sizeof(float));
         if(y) memcpy(y+j*d.y.cols, d.y.vals[index], d.y.cols*sizeof(float));
     }

@@ -28,11 +28,11 @@ extern void run_super(int argc, char **argv);
 extern void run_lsd(int argc, char **argv);
 extern void test_tracker();
 
-int mapFind(const void *l, const void *r)
+int compar(const void *l, const void *r)
 {
     const strListMap *lm = (strListMap *)l;
     const strListMap *lr = (strListMap *)r;
-    return lm->folder - lr->folder;
+    return strcmp(lm->folder, lr->folder);
 }
 
 void average(int argc, char *argv[])

@@ -240,6 +240,7 @@ void backward_network(network net)
 
 float train_network_datum(network net)
 {
+  printf("training..............\n");
 #ifdef GPU
     if(gpu_index >= 0) return train_network_datum_gpu(net);
 #endif
@@ -274,6 +275,7 @@ float train_network(network net, data d)
 
     int i;
     float sum = 0;
+    printf("-> N : %d , batch: %d , rows: %d\n", n,batch,d.X.rows);
     for(i = 0; i < n; ++i){
         get_next_batch(d, batch, i*batch, net.input, net.truth);
         float err = train_network_datum(net);
