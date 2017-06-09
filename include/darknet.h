@@ -522,7 +522,7 @@ typedef struct
     int count;
 } strListMap;
 
-int mapFind(const void *l, const void *r);
+int compar(const void *l, const void *r);
 
 typedef struct load_args{
     int threads;
