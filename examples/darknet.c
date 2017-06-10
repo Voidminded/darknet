@@ -3,6 +3,7 @@
 #include <time.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <assert.h>
 
 extern void predict_classifier(char *datacfg, char *cfgfile, char *weightfile, char *filename, int top);
 extern void test_detector(char *datacfg, char *cfgfile, char *weightfile, char *filename, float thresh, float hier_thresh, char *outfile, int fullscreen);
@@ -30,9 +31,11 @@ extern void test_tracker();
 
 int compar(const void *l, const void *r)
 {
-    const strListMap *lm = (strListMap *)l;
-    const strListMap *lr = (strListMap *)r;
-    return strcmp(lm->folder, lr->folder);
+  assert(r != 0);
+  assert(l != 0);
+  const strListMap *lm = (strListMap *)l;
+      const strListMap *lr = (strListMap *)r;
+      return strcmp(lm->folder, lr->folder);
 }
 
 void average(int argc, char *argv[])

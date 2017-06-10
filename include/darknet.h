@@ -527,7 +527,9 @@ int compar(const void *l, const void *r);
 typedef struct load_args{
     int threads;
     char **paths;
-    void *sequences;
+//    void *sequences;
+    char ***sequences;
+    int *seq_frames;
     char *path;
     int n;
     int m;

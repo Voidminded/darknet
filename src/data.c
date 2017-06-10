@@ -42,13 +42,26 @@ char **get_random_paths_indexes(char **paths, int n, int m, int *indexes)
 void get_random_sequence( char **paths, int s, int m, char **out_paths, int b)
 {
   int i;
-  pthread_mutex_lock(&mutex);
   int index = rand()%(m-s-2);
+  pthread_mutex_lock(&mutex);
   for(i = 0; i < s; ++i){
     out_paths[i+b] = paths[index+i];
   }
   pthread_mutex_unlock(&mutex);
 
+}
+
+int *get_random_index( int n, int m)
+{
+    int *random_index = calloc(n, sizeof(int));
+    int i;
+    pthread_mutex_lock(&mutex);
+    for(i = 0; i < n; ++i){
+        int index = rand()%m;
+        random_index[i] = index;
+    }
+    pthread_mutex_unlock(&mutex);
+    return random_index;
 }
 
 char **get_random_paths(char **paths, int n, int m)
@@ -904,15 +917,16 @@ data load_data_track(int n, char **folders, void* frames, int m, int steps, int 
   int i,j;
 
   strListMap *random_seq = malloc( sizeof( strListMap));
-  void *r = 0;
+  void *res = 0;
   for( i = 0; i < n; i++)
   {
     random_seq->folder = random_folders[i];
-    r = tfind( random_seq, &frames, compar);
-    get_random_sequence( (*(strListMap**)r)->frames, steps, (*(strListMap**)r)->count, random_paths, i*steps);
+
+    printf("Searching for %s\n", random_seq->folder);
+    res = tfind( random_seq, &frames, compar);
+    printf("Found : %s with %d images\n", (*(strListMap**)res)->folder, (*(strListMap**)res)->count);
+    get_random_sequence( (*(strListMap**)res)->frames, steps, (*(strListMap**)res)->count, random_paths, i*steps);
   }
-  free( random_seq);
-  free( r);
 
   data d = {0};
   d.shallow = 0;
@@ -972,7 +986,7 @@ data load_data_track(int n, char **folders, void* frames, int m, int steps, int 
 
         distort_image(sized, (j*dhue_start + (steps-j)*dhue_end)/steps, (j*dsat_start + (steps-j)*dsat_end)/steps, (j*dexp_start + (steps-j)*dexp_end)/steps);
 
-        d.X.vals[i] = sized.data;
+        d.X.vals[i*steps+j] = sized.data;
 
         fill_truth_detection(random_paths[i*steps+j], boxes, d.y.vals[i*steps+j], classes, flip, -dx/w, -dy/h, nw/w, nh/h);
 
@@ -981,6 +995,90 @@ data load_data_track(int n, char **folders, void* frames, int m, int steps, int 
   }
   free(random_paths);
   free(random_folders);
+  free( random_seq);
+  free( res);
+  return d;
+}
+
+data load_data_track2(int n, char ***frames, int *frame_size, int m, int steps, int w, int h, int boxes, int classes, float jitter, float hue, float saturation, float exposure)
+{
+  int *random_index = get_random_index( n, m);
+  char **random_paths = calloc(n*steps, sizeof(char*));
+
+  int i,j;
+
+  for( i = 0; i < n; i++)
+  {
+    get_random_sequence( frames[random_index[i]], steps, frame_size[random_index[i]], random_paths, i*steps);
+  }
+
+  data d = {0};
+  d.shallow = 0;
+
+  d.X.rows = n*steps;
+  d.X.vals = calloc(d.X.rows, sizeof(float*));
+  d.X.cols = h*w*3;
+
+  d.y = make_matrix( n*steps, 5*boxes);
+  for(i = 0; i < n; ++i){
+
+      int pw_start  = rand_uniform(-jitter, jitter);
+      int ph_start   = rand_uniform(-jitter, jitter);
+
+      int pw_end  = rand_uniform(-jitter, jitter);
+      int ph_end   = rand_uniform(-jitter, jitter);
+
+      float dhue_start = rand_uniform(-hue, hue);
+      float dsat_start = rand_scale(saturation);
+      float dexp_start = rand_scale(exposure);
+
+      float dhue_end = rand_uniform(-hue, hue);
+      float dsat_end = rand_scale(saturation);
+      float dexp_end = rand_scale(exposure);
+
+      int flip = rand()%2;
+      float scale = rand_uniform(.25, 2);
+
+      float dx_c = (float)rand()/RAND_MAX;
+      float dy_c = (float)rand()/RAND_MAX;
+      for( j=0; j<steps; ++j)
+      {
+        image orig = load_image_color(random_paths[i*steps+j], 0, 0);
+        image sized = make_image(w, h, orig.c);
+        fill_image(sized, .5);
+
+        float dw = (j *pw_start +(steps-j) *pw_end) *orig.w /steps;
+        float dh = (j *ph_start +(steps-j) *ph_end) *orig.h /steps;
+
+        float new_ar = (orig.w + dw) / (orig.h + dh);
+
+        float nw, nh;
+        if(new_ar < 1){
+            nh = scale * h;
+            nw = nh * new_ar;
+        } else {
+            nw = scale * w;
+            nh = nw / new_ar;
+        }
+
+        float dx = dx_c *(w - nw);
+        float dy = dy_c *(h - nh);
+
+        place_image(orig, nw, nh, dx, dy, sized);
+
+        if(flip) flip_image(sized);
+
+        distort_image(sized, (j*dhue_start + (steps-j)*dhue_end)/steps, (j*dsat_start + (steps-j)*dsat_end)/steps, (j*dexp_start + (steps-j)*dexp_end)/steps);
+
+        d.X.vals[i*steps+j] = sized.data;
+
+        fill_truth_detection(random_paths[i*steps+j], boxes, d.y.vals[i*steps+j], classes, flip, -dx/w, -dy/h, nw/w, nh/h);
+
+        free_image(orig);
+      }
+  }
+  free( random_index);
+  free( random_paths);
   return d;
 }
 
@@ -1020,7 +1118,7 @@ void *load_thread(void *ptr)
     } else if (a.type == TAG_DATA){
         *a.d = load_data_tag(a.paths, a.n, a.m, a.classes, a.min, a.max, a.size, a.angle, a.aspect, a.hue, a.saturation, a.exposure);
     } else if (a.type == TRACKER_DATA){
-        *a.d = load_data_track(a.n, a.paths, a.sequences, a.m, a.steps, a.w, a.h, a.num_boxes, a.classes, a.jitter, a.hue, a.saturation, a.exposure);
+        *a.d = load_data_track2(a.n, a.sequences, a.seq_frames, a.m, a.steps, a.w, a.h, a.num_boxes, a.classes, a.jitter, a.hue, a.saturation, a.exposure);
     }
     free(ptr);
     return 0;
@@ -1281,7 +1379,6 @@ void get_next_batch(data d, int n, int offset, float *X, float *y)
     int j;
     for(j = 0; j < n; ++j){
         int index = offset + j;
-        printf(" X+j*d.X.cols : %f , index : %d , j : %d , offset : %d\n", X+j*d.X.cols, index, j, offset);
         memcpy(X+j*d.X.cols, d.X.vals[index], d.X.cols*sizeof(float));
         if(y) memcpy(y+j*d.y.cols, d.y.vals[index], d.y.cols*sizeof(float));
     }

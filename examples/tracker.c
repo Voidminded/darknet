@@ -45,7 +45,7 @@ void train_tracker(char *datacfg, char *cfgfile, char *weightfile, int *gpus, in
 
   list *flist = get_paths(folders);
   char **folder_paths = (char **)list_to_array(flist);
-  void *root = 0;
+//  void *root = 0;
   load_args args = {0};
   args.w = net.w;
   args.h = net.h;
@@ -58,9 +58,10 @@ void train_tracker(char *datacfg, char *cfgfile, char *weightfile, int *gpus, in
   args.num_boxes = l.max_boxes;
   args.d = &buffer;
   args.type = TRACKER_DATA;
-  args.threads = 2;
-  args.sequences = root;
-
+  args.threads = 8;
+//  args.sequences = root;
+  args.sequences = calloc( flist->size, sizeof(char**));
+  args.seq_frames = calloc( flist->size, sizeof(int));
   args.angle = net.angle;
   args.exposure = net.exposure;
   args.saturation = net.saturation;
@@ -72,11 +73,13 @@ void train_tracker(char *datacfg, char *cfgfile, char *weightfile, int *gpus, in
     char *folder = folder_paths[j];
     list *frames = get_paths(folder);
     char **frame_paths = (char**)list_to_array(frames);
-    strListMap *seq = malloc(sizeof(strListMap));
-    seq->folder = folder;
-    seq->frames = frame_paths;
-    seq->count = frames->size;
-    tsearch(seq, &args.sequences, compar);
+//    strListMap *seq = malloc(sizeof(strListMap));
+//    seq->folder = folder;
+//    seq->frames = frame_paths;
+//    seq->count = frames->size;
+//    tsearch(seq, &args.sequences, compar);
+    args.sequences[j] = frame_paths;
+    args.seq_frames[j] = frames->size;
   }
   pthread_t load_thread = load_data(args);
   clock_t time;
@@ -117,7 +120,6 @@ void train_tracker(char *datacfg, char *cfgfile, char *weightfile, int *gpus, in
     } else {
       loss = train_networks(nets, ngpus, train, 4);
     }
-    printf("trained !\n");
 #else
     loss = train_network(net, train);
 #endif
@@ -150,7 +152,7 @@ void train_tracker(char *datacfg, char *cfgfile, char *weightfile, int *gpus, in
   char buff[256];
   sprintf(buff, "%s/%s_final.weights", backup_directory, base);
   save_weights(net, buff);
-  free(root);
+//  free(root);
 }
 
 void run_tracker(int argc, char **argv)
