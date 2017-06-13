@@ -5,7 +5,10 @@ void train_tracker(char *datacfg, char *cfgfile, char *weightfile, int *gpus, in
   list *options = read_data_cfg(datacfg);
   char *folders = option_find_str(options, "train", "data/train.list");
   char *backup_directory = option_find_str(options, "backup", "/backup/");
+  char *train_csv_name = "train.csv";
 
+  FILE *train_csv_file = fopen(train_csv_name,"w+");
+  fprintf(train_csv_file,"Batch,Loss,Avg,Rate,Images\n");
   srand(time(0));
   char *base = basecfg(cfgfile);
   printf("%s\n", base);
@@ -50,7 +53,7 @@ void train_tracker(char *datacfg, char *cfgfile, char *weightfile, int *gpus, in
   args.w = net.w;
   args.h = net.h;
   args.paths = folder_paths;
-  args.n = batch;
+  args.n = batch*net.subdivisions*ngpus;
   args.m = flist->size;
   args.steps = steps;
   args.classes = classes;
@@ -128,6 +131,8 @@ void train_tracker(char *datacfg, char *cfgfile, char *weightfile, int *gpus, in
 
     i = get_current_batch(net);
     printf("%d: %f, %f avg, %f rate, %lf seconds, %d images\n", get_current_batch(net), loss, avg_loss, get_current_rate(net), sec(clock()-time), i*imgs);
+    fprintf( train_csv_file, "%d,%f,%f,%f,%d\n", get_current_batch(net), loss, avg_loss, get_current_rate(net), i*imgs);
+    fflush( train_csv_file);
     if(i%1000==0){
 #ifdef GPU
       if(ngpus != 1) sync_nets(nets, ngpus, 0);
@@ -136,7 +141,7 @@ void train_tracker(char *datacfg, char *cfgfile, char *weightfile, int *gpus, in
       sprintf(buff, "%s/%s.backup", backup_directory, base);
       save_weights(net, buff);
     }
-    if(i%10000==0 || (i < 1000 && i%100 == 0)){
+    if(i%10000==0 || (i < 10000 && i%1000 == 0) || (i < 1000 && i%100 == 0)){
 #ifdef GPU
       if(ngpus != 1) sync_nets(nets, ngpus, 0);
 #endif
@@ -152,6 +157,7 @@ void train_tracker(char *datacfg, char *cfgfile, char *weightfile, int *gpus, in
   char buff[256];
   sprintf(buff, "%s/%s_final.weights", backup_directory, base);
   save_weights(net, buff);
+  fclose(train_csv_file);
 //  free(root);
 }
 
