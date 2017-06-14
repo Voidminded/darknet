@@ -1039,6 +1039,10 @@ data load_data_track2(int n, char ***frames, int *frame_size, int m, int steps, 
       int flip = rand()%2;
       float scale = rand_uniform(.25, 2);
 
+      int strip = rand()%3;
+      float strip_w = rand_uniform(0.0, 0.1);
+      float strip_p = rand_uniform(0.0, 1.0-strip_w);
+
       float dx_c = (float)rand()/RAND_MAX;
       float dy_c = (float)rand()/RAND_MAX;
       for( j=0; j<steps; ++j)
@@ -1069,6 +1073,16 @@ data load_data_track2(int n, char ***frames, int *frame_size, int m, int steps, 
         if(flip) flip_image(sized);
 
         distort_image(sized, (j*dhue_start + (steps-j)*dhue_end)/steps, (j*dsat_start + (steps-j)*dsat_end)/steps, (j*dexp_start + (steps-j)*dexp_end)/steps);
+
+        if( j > 3 && strip)
+        {
+          image strip_img = make_image( w*strip_w, h, orig.c);
+          fill_image( strip_img, rand_uniform(0.0,1.0));
+          place_image( strip_img, strip_img.w, h, (int)(w*strip_p), 0, sized);
+        }
+
+//        show_image(sized, "sized");
+//        cvWaitKey(0);
 
         d.X.vals[i*steps+j] = sized.data;
 
