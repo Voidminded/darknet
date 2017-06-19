@@ -1079,6 +1079,7 @@ data load_data_track2(int n, char ***frames, int *frame_size, int m, int steps, 
           image strip_img = make_image( w*strip_w, h, orig.c);
           fill_image( strip_img, rand_uniform(0.0,1.0));
           place_image( strip_img, strip_img.w, h, (int)(w*strip_p), 0, sized);
+          free_image(strip_img);
         }
 
 //        show_image(sized, "sized");
