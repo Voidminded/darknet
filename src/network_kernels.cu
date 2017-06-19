@@ -123,6 +123,7 @@ float train_network_datum_gpu(network net)
     cuda_push_array(net.truth_gpu, net.truth, y_size);
 
     net.train = 1;
+    fprintf(stderr, "---> net.inputs: %d, net.outputs: %d\n", net.inputs, net.outputs);
     forward_network_gpu(net);
     backward_network_gpu(net);
 

@@ -130,8 +130,8 @@ void train_tracker(char *datacfg, char *cfgfile, char *weightfile, int *gpus, in
     avg_loss = avg_loss*.9 + loss*.1;
 
     i = get_current_batch(net);
-    printf("%d: %f, %f avg, %f rate, %lf seconds, %d images\n", get_current_batch(net), loss, avg_loss, get_current_rate(net), sec(clock()-time), i*imgs);
-    fprintf( train_csv_file, "%d,%f,%f,%f,%d\n", get_current_batch(net), loss, avg_loss, get_current_rate(net), i*imgs);
+    printf("%d: %f, %f avg, %g rate, %lf seconds, %d images\n", get_current_batch(net), loss, avg_loss, get_current_rate(net), sec(clock()-time), i*imgs);
+    fprintf( train_csv_file, "%d,%f,%f,%g,%d\n", get_current_batch(net), loss, avg_loss, get_current_rate(net), i*imgs);
     fflush( train_csv_file);
     if(i%1000==0){
 #ifdef GPU

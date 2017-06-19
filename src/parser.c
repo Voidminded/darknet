@@ -387,6 +387,7 @@ layer parse_reorg(list *options, size_params params)
     int flatten = option_find_int_quiet(options, "flatten",0);
     int extra = option_find_int_quiet(options, "extra",0);
 
+    printf("h: %d, w: %d, c: %d", params.h, params.w, params.c);
     int batch,h,w,c;
     h = params.h;
     w = params.w;

@@ -65,9 +65,9 @@ network *load_network_p(char *cfg, char *weights, int clear)
     return net;
 }
 
-size_t get_current_batch(network net)
+int get_current_batch(network net)
 {
-    size_t batch_num = (*net.seen)/(net.batch*net.subdivisions);
+    int batch_num = (*net.seen)/(net.batch*net.subdivisions);
     return batch_num;
 }
 
@@ -84,7 +84,7 @@ void reset_momentum(network net)
 
 float get_current_rate(network net)
 {
-    size_t batch_num = get_current_batch(net);
+    int batch_num = get_current_batch(net);
     int i;
     float rate;
     if (batch_num < net.burn_in) return net.learning_rate * pow((float)batch_num / net.burn_in, net.power);
@@ -133,7 +133,7 @@ char *get_layer_string(LAYER_TYPE a)
         case GRU:
             return "gru";
         case LSTM:
-	    return "lstm";
+      return "lstm";
         case CRNN:
             return "crnn";
         case MAXPOOL:
@@ -174,7 +174,6 @@ network make_network(int n)
     net.n = n;
     net.layers = calloc(net.n, sizeof(layer));
     net.seen = calloc(1, sizeof(int));
-    net.t    = calloc(1, sizeof(int));
     net.cost = calloc(1, sizeof(float));
     return net;
 }
@@ -200,22 +199,12 @@ void forward_network(network net)
 void update_network(network net)
 {
     int i;
-    update_args a = {0};
-    a.batch = net.batch*net.subdivisions;
-    a.learning_rate = get_current_rate(net);
-    a.momentum = net.momentum;
-    a.decay = net.decay;
-    a.adam = net.adam;
-    a.B1 = net.B1;
-    a.B2 = net.B2;
-    a.eps = net.eps;
-    ++*net.t;
-    a.t = *net.t;
-
+    int update_batch = net.batch*net.subdivisions;
+    float rate = get_current_rate(net);
     for(i = 0; i < net.n; ++i){
         layer l = net.layers[i];
         if(l.update){
-            l.update(l, a);
+            l.update(l, update_batch, rate*l.learning_rate_scale, net.momentum, net.decay);
         }
     }
 }
@@ -286,16 +275,36 @@ float train_network_sgd(network net, data d, int n)
     return (float)sum/(n*batch);
 }
 
-float train_network(network net, data d)
+float train_network_track(network net, data d)
 {
+  copy_cpu(net.inputs*net.batch, p.x, 1, net.input, 1);
+  copy_cpu(net.truths*net.batch, p.y, 1, net.truth, 1);
+  float loss = train_network_datum(net) / (net.batch);
+
     assert(d.X.rows % net.batch == 0);
-    int batch = net.batch;
+    int batch = net.batch/net.time_steps;
     int n = d.X.rows / batch;
 
     int i;
     float sum = 0;
     for(i = 0; i < n; ++i){
-        get_next_batch(d, batch, i*batch, net.input, net.truth);
+        get_next_batch(d, batch/net.time_steps, i*(batch/net.time_steps), net.input, net.truth);
+        float err = train_network_datum(net);
+        sum += err;
+    }
+    return (float)sum/(n*batch);
+}
+
+float train_network(network net, data d)
+{
+    assert(d.X.rows % net.batch == 0);
+    int batch = net.batch/net.time_steps;
+    int n = d.X.rows / batch;
+
+    int i;
+    float sum = 0;
+    for(i = 0; i < n; ++i){
+        get_next_batch(d, batch/net.time_steps, i*(batch/net.time_steps), net.input, net.truth);
         float err = train_network_datum(net);
         sum += err;
     }
@@ -437,7 +446,7 @@ void visualize_network(network net)
         if(l.type == CONVOLUTIONAL){
             prev = visualize_convolutional_layer(l, buff, prev);
         }
-    } 
+    }
 }
 
 void top_predictions(network net, int k, int *index)
@@ -498,7 +507,7 @@ matrix network_predict_data_multi(network net, data test, int n)
         }
     }
     free(X);
-    return pred;   
+    return pred;
 }
 
 matrix network_predict_data(network net, data test)
@@ -521,7 +530,7 @@ matrix network_predict_data(network net, data test)
         }
     }
     free(X);
-    return pred;   
+    return pred;
 }
 
 void print_network(network net)
@@ -563,7 +572,7 @@ void compare_networks(network n1, network n2, data test)
     printf("%5d %5d\n%5d %5d\n", a, b, c, d);
     float num = pow((abs(b - c) - 1.), 2.);
     float den = b + c;
-    printf("%f\n", num/den); 
+    printf("%f\n", num/den);
 }
 
 float network_accuracy(network net, data d)
