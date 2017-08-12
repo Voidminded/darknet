@@ -175,9 +175,9 @@ float_pair convert_mat_to_pair(data d, network net, int batch, int steps)
   p.y = calloc(net.batch*batch*d.y.cols, sizeof(float));
   for(b = 0; b < batch; ++b){
     int i;
-    for(i = 0; i < net.batch; ++i){
-      memcpy(p.x + i*d.X.cols + b*net.batch, d.X.vals[i+ b*net.batch], d.X.cols*sizeof(float));
-      memcpy(p.y + i*d.y.cols + b*net.batch, d.y.vals[i+ b*net.batch], d.y.cols*sizeof(float));
+    for(i = 0; i < steps; ++i){
+      memcpy(p.x + i*d.X.cols + b*steps*d.X.cols, d.X.vals[i+ b*steps], d.X.cols*sizeof(float));
+      memcpy(p.y + i*d.y.cols + b*steps*d.y.cols, d.y.vals[i+ b*steps], d.y.cols*sizeof(float));
     }
   }
   return p;
