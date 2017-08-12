@@ -252,21 +252,20 @@ void train_vid_tracker(char *datacfg, char *cfgfile, char *weightfile, int clear
     pthread_join(load_thread, 0);
     train = buffer;
     load_thread = load_data(args);
-    float_pair p = convert_mat_to_pair(train, net, batch, steps);
+    // float_pair p = convert_mat_to_pair(train, net, batch, steps);
 
-    copy_cpu(net.inputs*net.batch, p.x, 1, net.input, 1);
-    copy_cpu(net.truths*net.batch, p.y, 1, net.truth, 1);
+    // copy_cpu(net.inputs*net.batch, p.x, 1, net.input, 1);
+    // copy_cpu(net.truths*net.batch, p.y, 1, net.truth, 1);
     printf("Loaded: %lf seconds\n", sec(clock()-time));
 
     time=clock();
-    train_network_datum(net) / (net.batch);
-    float loss = train_network_datum(net) / (net.batch);
+    float loss = train_network(net, train);
     if (avg_loss < 0) avg_loss = loss;
     avg_loss = avg_loss*.9 + loss*.1;
-    free(p.x);
-    free(p.y);
+    // free(p.x);
+    // free(p.y);
     i = get_current_batch(net);
-    printf("%d: %f, %f avg, %f rate, %lf seconds, %d images\n", get_current_batch(net), loss, avg_loss, get_current_rate(net), sec(clock()-time), i*imgs);
+    printf("%d: %f, %f avg, %g rate, %lf seconds, %d images\n", get_current_batch(net), loss, avg_loss, get_current_rate(net), sec(clock()-time), i*imgs);
     fprintf( train_csv_file, "%d,%f,%f,%f,%d\n", get_current_batch(net), loss, avg_loss, get_current_rate(net), i*imgs);
     fflush( train_csv_file);
     if(i%1000==0){

@@ -685,6 +685,7 @@ float get_current_rate(network net);
 void composite_3d(char *f1, char *f2, char *out, int delta);
 data load_data_old(char **paths, int n, int m, char **labels, int k, int w, int h);
 size_t get_current_batch(network net);
+size_t get_current_recurrent_batch(network net);
 void constrain_image(image im);
 image get_network_image_layer(network net, int i);
 layer get_network_output_layer(network net);

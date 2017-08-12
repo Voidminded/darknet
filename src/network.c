@@ -71,6 +71,13 @@ size_t get_current_batch(network net)
     return batch_num;
 }
 
+size_t get_current_recurrent_batch(network net)
+{
+    size_t batch_num = ((*net.seen)*net.time_steps)/(net.batch*net.subdivisions);
+    printf("%d, %d, %d, %d, %d\n", batch_num,(*net.seen),  net.time_steps, net.batch, net.subdivisions);
+    return batch_num;
+}
+
 void reset_momentum(network net)
 {
     if (net.momentum == 0) return;
