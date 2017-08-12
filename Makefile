@@ -19,13 +19,17 @@ EXEC=darknet
 OBJDIR=./obj/
 
 CC=gcc
-NVCC=nvcc --compiler-options '-fPIC'
+NVCC=nvcc 
 AR=ar
 ARFLAGS=rcs
 OPTS=-Ofast
 LDFLAGS= -lm -pthread 
 COMMON= -Iinclude/ -Isrc/
-CFLAGS=-Wall -Wfatal-errors -fPIC
+CFLAGS=-Wall -Wno-unknown-pragmas -Wfatal-errors -fPIC
+
+ifeq ($(OPENMP), 1) 
+CFLAGS+= -fopenmp
+endif
 
 ifeq ($(DEBUG), 1) 
 OPTS=-O0 -g
@@ -63,7 +67,8 @@ EXECOBJ = $(addprefix $(OBJDIR), $(EXECOBJA))
 OBJS = $(addprefix $(OBJDIR), $(OBJ))
 DEPS = $(wildcard src/*.h) Makefile include/darknet.h
 
-all: obj backup results $(SLIB) $(ALIB) $(EXEC)
+#all: obj backup results $(SLIB) $(ALIB) $(EXEC)
+all: obj  results $(SLIB) $(ALIB) $(EXEC)
 
 
 $(EXEC): $(EXECOBJ) $(ALIB)
