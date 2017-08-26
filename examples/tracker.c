@@ -183,29 +183,26 @@ float_pair convert_mat_to_pair(data d, network net, int batch, int steps)
   return p;
 }
 
-void test_racker(char *datacfg, char *cfgfile, char *weightfile,char *filename, float thresh, float hier_thresh, char *outfile)
+void test_tracker(char *datacfg, char *cfgfile, char *weightfile, char *filename)//, float thresh, float hier_thresh, char *outfile)
 {
-   list *options = read_data_cfg(datacfg);
+  list *options = read_data_cfg(datacfg);
   char *folders = option_find_str(options, "train", "data/train.list");
-  char *backup_directory = option_find_str(options, "backup", "/backup/");
-  char *train_csv_name = "train.csv";
+  char *name_list = option_find_str(options, "names", "data/names.list");
+  char **names = get_labels(name_list);
+  image **alphabet = load_alphabet();
+  
+  srand(2222222);
 
-  FILE *train_csv_file = fopen(train_csv_name,"w+");
-  fprintf(train_csv_file,"Batch,Loss,Avg,Rate,Images\n");
-  srand(time(0));
   char *base = basecfg(cfgfile);
   printf("%s\n", base);
-  float avg_loss = -1;
   network net = parse_network_cfg(cfgfile);
   if(weightfile){
       load_weights(&net, weightfile);
   }
-  set_batch_network(&net, 1);
 
-  printf("Learning Rate: %g, Momentum: %g, Decay: %g\n", net.learning_rate, net.momentum, net.decay);
+  printf("testing...\n");
   int imgs = net.batch *net.subdivisions;
-  int i = *net.seen/imgs;
-
+  
   list *flist = get_paths(folders);
   char **folder_paths = (char **)list_to_array(flist);
   clock_t time;
@@ -247,47 +244,57 @@ void test_racker(char *datacfg, char *cfgfile, char *weightfile,char *filename, 
     args.seq_frames[j] = frames->size;
   }
   pthread_t load_thread = load_data(args);
-  while(get_current_batch(net) < net.max_batches)
+  //while(get_current_batch(net) < net.max_batches)
+  while(1)
   {
     time=clock();
-
     pthread_join(load_thread, 0);
     train = buffer;
     load_thread = load_data(args);
-    image im = load_image_color(train.X.vals,0,0);
-    save_image(im, "/tmp/temp.jpg");
+    
+    // image im = load_image_color(train.X.vals,0,0);
+    image im = make_image(net.w, net.h, 3);
+    memcpy(im.data, train.X.vals[0], train.X.cols*sizeof(float));
+    // image im = load_image_color("/tmp/au_00000000.jpg",0,0);
     // float_pair p = convert_mat_to_pair(train, net, batch, steps);
 
     // copy_cpu(net.inputs*net.batch, p.x, 1, net.input, 1);
     // copy_cpu(net.truths*net.batch, p.y, 1, net.truth, 1);
     printf("Loaded: %lf seconds\n", sec(clock()-time));
 
-    time=clock();
-    network_predict(net, train.X.vals);
-    if (avg_loss < 0) avg_loss = loss;
-    avg_loss = avg_loss*.9 + loss*.1;
-    // free(p.x);
-    // free(p.y);
-    i = get_current_batch(net);
-    printf("%d: %f, %f avg, %g rate, %lf seconds, %d images\n", get_current_batch(net), loss, avg_loss, get_current_rate(net), sec(clock()-time), i*imgs);
-    fprintf( train_csv_file, "%d,%f,%f,%f,%d\n", get_current_batch(net), loss, avg_loss, get_current_rate(net), i*imgs);
-    fflush( train_csv_file);
-    if(i%1000==0){
-      char buff[256];
-      sprintf(buff, "%s/%s.backup", backup_directory, base);
-      save_weights(net, buff);
+    // time=clock();
+    layer l = net.layers[net.n-1];
+    // network_predict(net, train.X.vals[0]);
+
+    box *boxes = calloc(l.w*l.h*l.n, sizeof(box));
+    float **probs = calloc(l.w*l.h*l.n, sizeof(float *));
+    for(j = 0; j < l.w*l.h*l.n; ++j) probs[j] = calloc(l.classes + 1, sizeof(float *));
+    float **masks = 0;
+    if (l.coords > 4){
+        masks = calloc(l.w*l.h*l.n, sizeof(float*));
+        for(j = 0; j < l.w*l.h*l.n; ++j) masks[j] = calloc(l.coords-4, sizeof(float *));
     }
-    if(i%10000==0 || (i < 10000 && i%1000 == 0) || (i < 1000 && i%100 == 0)){
-      char buff[256];
-      sprintf(buff, "%s/%s_%d.weights", backup_directory, base, i);
-      save_weights(net, buff);
-    }
+
+    float *X = im.data;
+    time=what_time_is_it_now();
+    network_predict(net, train.X.vals[0]);
+    // printf("%s: Predicted in %f seconds.\n", input, what_time_is_it_now()-time);
+    get_region_boxes(l, im.w, im.h, net.w, net.h, 0.3, probs, boxes, masks, 0, 0, 0.5, 1);
+    // if (nms) do_nms_obj(boxes, probs, l.w*l.h*l.n, l.classes, nms);
+    //else if (nms) do_nms_sort(boxes, probs, l.w*l.h*l.n, l.classes, nms);
+    draw_detections(im, l.w*l.h*l.n, 0.3, boxes, probs, masks, names, alphabet, l.classes);
+    printf("--> %d\n", train.X.cols);
+        
+    printf(":/ \n");
+    save_image(im, "/tmp/tmp");
+    show_image(im, "IMG");
+    cvWaitKey(0);
+    printf(":\\\n");
+
+    // // free(p.x);
+    // // free(p.y);
     free_data(train);
   }
-  char buff[256];
-  sprintf(buff, "%s/%s_final.weights", backup_directory, base);
-  save_weights(net, buff);
-  fclose(train_csv_file);
 
 }
 
@@ -359,6 +366,7 @@ void train_vid_tracker(char *datacfg, char *cfgfile, char *weightfile, int clear
 
     pthread_join(load_thread, 0);
     train = buffer;
+
     load_thread = load_data(args);
     // float_pair p = convert_mat_to_pair(train, net, batch, steps);
 
@@ -440,8 +448,8 @@ void run_tracker(int argc, char **argv)
   char *cfg = argv[4];
   char *weights = (argc > 5) ? argv[5] : 0;
   char *filename = (argc > 6) ? argv[6]: 0;
-  //  if(0==strcmp(argv[2], "test")) test_detector(datacfg, cfg, weights, filename, thresh, hier_thresh, outfile, fullscreen);
-  /*else */if(0==strcmp(argv[2], "train")) train_tracker(datacfg, cfg, weights, gpus, ngpus, clear);
+  if(0==strcmp(argv[2], "test")) test_tracker(datacfg, cfg, weights, filename);
+  else if(0==strcmp(argv[2], "train")) train_tracker(datacfg, cfg, weights, gpus, ngpus, clear);
   else if(0==strcmp(argv[2], "train2")) train_vid_tracker(datacfg, cfg, weights, clear);
   //  else if(0==strcmp(argv[2], "valid")) validate_detector(datacfg, cfg, weights, outfile);
   //  else if(0==strcmp(argv[2], "valid2")) validate_detector_flip(datacfg, cfg, weights, outfile);
