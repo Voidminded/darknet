@@ -27,6 +27,7 @@ void train_segmenter(char *datacfg, char *cfgfile, char *weightfile, int *gpus, 
     image pred = get_network_image(net);
 
     int div = net->w/pred.w;
+    //printf("Div = %d, %d, %d\n", div, net->w, pred.w); 
     assert(pred.w * div == net->w);
     assert(pred.h * div == net->h);
 
@@ -47,7 +48,7 @@ void train_segmenter(char *datacfg, char *cfgfile, char *weightfile, int *gpus, 
     load_args args = {0};
     args.w = net->w;
     args.h = net->h;
-    args.threads = 32;
+    args.threads = 8;
     args.scale = div;
 
     args.min = net->min_crop;
@@ -58,7 +59,7 @@ void train_segmenter(char *datacfg, char *cfgfile, char *weightfile, int *gpus, 
     args.saturation = net->saturation;
     args.hue = net->hue;
     args.size = net->w;
-    args.classes = 80;
+    args.classes = 1;
 
     args.paths = paths;
     args.n = imgs;
@@ -93,31 +94,32 @@ void train_segmenter(char *datacfg, char *cfgfile, char *weightfile, int *gpus, 
         loss = train_network(net, train);
 #endif
         if(display){
-            image tr = float_to_image(net->w/div, net->h/div, 80, train.y.vals[net->batch*(net->subdivisions-1)]);
+            image tr = float_to_image(net->w/div, net->h/div, 3, train.y.vals[net->batch*(net->subdivisions-1)]);
             image im = float_to_image(net->w, net->h, net->c, train.X.vals[net->batch*(net->subdivisions-1)]);
-            image mask = mask_to_rgb(tr);
-            image prmask = mask_to_rgb(pred);
+            //image mask = mask_to_rgb(tr);
+            //image prmask = mask_to_rgb(pred);
             show_image(im, "input");
-            show_image(prmask, "pred");
-            show_image(mask, "truth");
+            show_image(pred, "pred");
+            show_image(tr, "truth");
 #ifdef OPENCV
             cvWaitKey(100);
 #endif
-            free_image(mask);
-            free_image(prmask);
+            //free_image(tr);
+            free_image(pred);
         }
         if(avg_loss == -1) avg_loss = loss;
         avg_loss = avg_loss*.9 + loss*.1;
         printf("%ld, %.3f: %f, %f avg, %f rate, %lf seconds, %ld images\n", get_current_batch(net), (float)(*net->seen)/N, loss, avg_loss, get_current_rate(net), sec(clock()-time), *net->seen);
         free_data(train);
-        if(*net->seen/N > epoch){
+        if(0 && *net->seen/N > epoch){
             epoch = *net->seen/N;
             char buff[256];
             sprintf(buff, "%s/%s_%d.weights",backup_directory,base, epoch);
             save_weights(net, buff);
         }
-        if(get_current_batch(net)%100 == 0){
+        if( get_current_batch(net)%10 == 0){
             char buff[256];
+            save_image(pred, "res.jpg");
             sprintf(buff, "%s/%s.backup",backup_directory,base);
             save_weights(net, buff);
         }
