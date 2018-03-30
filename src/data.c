@@ -695,6 +695,18 @@ image get_segmentation_image2(char *path, int w, int h, int classes)
     return mask;
 }
 
+image get_seg_image(char *path, int w, int h)
+{
+    char labelpath[4096];
+    find_replace(path, "img", "gt", labelpath);
+    find_replace(labelpath, "JPEGImages", "mask", labelpath);
+    find_replace(labelpath, ".jpeg", ".tiff", labelpath);
+    find_replace(labelpath, ".JPG", ".tiff", labelpath);
+    find_replace(labelpath, ".JPEG", ".tiff", labelpath);
+    image mask = load_image_color(labelpath, 0, 0); 
+    return mask;
+}
+
 data load_data_seg(int n, char **paths, int m, int w, int h, int classes, int min, int max, float angle, float aspect, float hue, float saturation, float exposure, int div)
 {
     char **random_paths = get_random_paths(paths, n, m);
@@ -708,7 +720,7 @@ data load_data_seg(int n, char **paths, int m, int w, int h, int classes, int mi
 
 
     d.y.rows = n;
-    d.y.cols = h*w*classes/div/div;
+    d.y.cols = h*w*3;//classes/div/div;
     d.y.vals = calloc(d.X.rows, sizeof(float*));
 
     for(i = 0; i < n; ++i){
@@ -721,8 +733,9 @@ data load_data_seg(int n, char **paths, int m, int w, int h, int classes, int mi
         random_distort_image(sized, hue, saturation, exposure);
         d.X.vals[i] = sized.data;
 
-        image mask = get_segmentation_image(random_paths[i], orig.w, orig.h, classes);
+        //image mask = get_segmentation_image(random_paths[i], orig.w, orig.h, classes);
         //image mask = make_image(orig.w, orig.h, classes+1);
+        image mask = get_seg_image(random_paths[i], orig.w, orig.h);
         image sized_m = rotate_crop_image(mask, a.rad, a.scale/div, a.w/div, a.h/div, a.dx/div, a.dy/div, a.aspect);
 
         if(flip) flip_image(sized_m);
@@ -731,12 +744,12 @@ data load_data_seg(int n, char **paths, int m, int w, int h, int classes, int mi
         free_image(orig);
         free_image(mask);
 
-        /*
-           image rgb = mask_to_rgb(sized_m, classes);
-           show_image(rgb, "part");
-           show_image(sized, "orig");
+       /* 
+           //image rgb = mask_to_rgb(sized_m, classes);
+           show_image(sized_m, "gt");
+           show_image(sized, "img");
            cvWaitKey(0);
-           free_image(rgb);
+           //free_image(rgb);
          */
     }
     free(random_paths);
