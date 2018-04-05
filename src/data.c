@@ -725,20 +725,23 @@ data load_data_seg(int n, char **paths, int m, int w, int h, int classes, int mi
 
     for(i = 0; i < n; ++i){
         image orig = load_image_color(random_paths[i], 0, 0);
-        augment_args a = random_augment_args(orig, angle, aspect, min, max, w, h);
-        image sized = rotate_crop_image(orig, a.rad, a.scale, a.w, a.h, a.dx, a.dy, a.aspect);
+        //augment_args a = random_augment_args(orig, angle, aspect, min, max, w, h);
 
-        int flip = rand()%2;
-        if(flip) flip_image(sized);
+        //image sized = rotate_crop_image(orig, a.rad, a.scale, a.w, a.h, a.dx, a.dy, a.aspect);
+
+        image sized = copy_image( orig);
+
+        //int flip = rand()%2;
+        //if(flip) flip_image(sized);
         random_distort_image(sized, hue, saturation, exposure);
         d.X.vals[i] = sized.data;
 
         //image mask = get_segmentation_image(random_paths[i], orig.w, orig.h, classes);
         //image mask = make_image(orig.w, orig.h, classes+1);
         image mask = get_seg_image(random_paths[i], orig.w, orig.h);
-        image sized_m = rotate_crop_image(mask, a.rad, a.scale/div, a.w/div, a.h/div, a.dx/div, a.dy/div, a.aspect);
-
-        if(flip) flip_image(sized_m);
+        //image sized_m = rotate_crop_image(mask, a.rad, a.scale/div, a.w/div, a.h/div, a.dx/div, a.dy/div, a.aspect);
+        image sized_m = copy_image( mask);
+        //if(flip) flip_image(sized_m);
         d.y.vals[i] = sized_m.data;
 
         free_image(orig);

@@ -6,6 +6,11 @@ void train_segmenter(char *datacfg, char *cfgfile, char *weightfile, int *gpus, 
 {
     int i;
 
+    char *train_csv_name = "train.csv";
+
+    FILE *train_csv_file = fopen(train_csv_name,"w+");
+    fprintf(train_csv_file,"Batche,Epoch,Loss,Avg,Rate\n");
+
     float avg_loss = -1;
     char *base = basecfg(cfgfile);
     printf("%s\n", base);
@@ -109,20 +114,26 @@ void train_segmenter(char *datacfg, char *cfgfile, char *weightfile, int *gpus, 
         }
         if(avg_loss == -1) avg_loss = loss;
         avg_loss = avg_loss*.9 + loss*.1;
-        printf("%ld, %.3f: %f, %f avg, %f rate, %lf seconds, %ld images\n", get_current_batch(net), (float)(*net->seen)/N, loss, avg_loss, get_current_rate(net), sec(clock()-time), *net->seen);
-        free_data(train);
-        if(0 && *net->seen/N > epoch){
+        printf("%ld, %.3f: %f, %f avg, %g rate, %lf seconds, %ld images\n", get_current_batch(net), (float)(*net->seen)/N, loss, avg_loss, get_current_rate(net), sec(clock()-time), *net->seen);
+        fprintf( train_csv_file, "%d,%f,%f,%f,%g\n", get_current_batch(net), (float)(*net->seen)/N, loss, avg_loss, get_current_rate(net));
+        fflush( train_csv_file);
+        if(*net->seen/N > epoch){
             epoch = *net->seen/N;
             char buff[256];
             sprintf(buff, "%s/%s_%d.weights",backup_directory,base, epoch);
             save_weights(net, buff);
         }
-        if( get_current_batch(net)%10 == 0){
+        if( get_current_batch(net)%100 == 0){
             char buff[256];
-            save_image(pred, "res.jpg");
+            image tr = float_to_image(net->w/div, net->h/div, 3, train.y.vals[net->batch*(net->subdivisions-1)]);
+            save_image(tr, "truth");
+            char pred_name[9];
+            sprintf( pred_name, "%d", get_current_batch(net)/100);
+            save_image(pred, pred_name);
             sprintf(buff, "%s/%s.backup",backup_directory,base);
             save_weights(net, buff);
         }
+        free_data(train);
     }
     char buff[256];
     sprintf(buff, "%s/%s.weights", backup_directory, base);
@@ -132,6 +143,7 @@ void train_segmenter(char *datacfg, char *cfgfile, char *weightfile, int *gpus, 
     free_ptrs((void**)paths, plist->size);
     free_list(plist);
     free(base);
+    fclose(train_csv_file);
 }
 
 void predict_segmenter(char *datafile, char *cfg, char *weights, char *filename)
