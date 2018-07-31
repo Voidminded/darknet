@@ -128,7 +128,7 @@ void train_segmenter(char *datacfg, char *cfgfile, char *weightfile, int *gpus, 
             image tr = float_to_image(net->w/div, net->h/div, 3, train.y.vals[net->batch*(net->subdivisions-1)]);
             save_image(tr, "truth");
             char pred_name[9];
-            sprintf( pred_name, "%d", get_current_batch(net)%100);
+            sprintf( pred_name, "%d", get_current_batch(net)/100);
             save_image(pred, pred_name);
             sprintf(buff, "%s/%s.backup",backup_directory,base);
             save_weights(net, buff);
