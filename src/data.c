@@ -119,6 +119,7 @@ matrix load_image_augment_paths(char **paths, int n, int min, int max, int size,
             crop = random_augment_image(im, angle, aspect, min, max, size, size);
         }
         int flip = rand()%2;
+
         if (flip) flip_image(crop);
         random_distort_image(crop, hue, saturation, exposure);
 
@@ -725,33 +726,55 @@ data load_data_seg(int n, char **paths, int m, int w, int h, int classes, int mi
     d.y.cols = h*w*3;//classes/div/div;
     d.y.vals = calloc(d.X.rows, sizeof(float*));
 
+    int valid;
     for(i = 0; i < n; ++i){
         image orig = load_image_color(random_paths[i], 0, 0);
         //augment_args a = random_augment_args(orig, angle, aspect, min, max, w, h);
 
         //image sized = rotate_crop_image(orig, a.rad, a.scale, a.w, a.h, a.dx, a.dy, a.aspect);
 
-        image sized = resize_image( orig, w, h);
+        int dx = rand_int(0, orig.w - w);
+        int dy = rand_int(0, orig.h - h);
+        //image sized = resize_image( orig, w, h);
+        image sized = crop_image(orig, dx, dy, w, h);
 
         //int flip = rand()%2;
         //if(flip) flip_image(sized);
         random_distort_image(sized, hue, saturation, exposure);
-        d.X.vals[i] = sized.data;
+        //d.X.vals[i] = sized.data;
 
         //image mask = get_segmentation_image(random_paths[i], orig.w, orig.h, classes);
         //image mask = make_image(orig.w, orig.h, classes+1);
         image mask = get_seg_image(random_paths[i], orig.w, orig.h);
+
         //image sized_m = rotate_crop_image(mask, a.rad, a.scale/div, a.w/div, a.h/div, a.dx/div, a.dy/div, a.aspect);
-        image sized_m = resize_image( mask, w, h);
+        //image sized_m = resize_image( mask, w, h);
+        valid = 0;
+        image sized_m = crop_seg_gt( mask, dx, dy, w, h, &valid);
         //if(flip) flip_image(sized_m);
-        d.y.vals[i] = sized_m.data;
+        //d.y.vals[i] = sized_m.data;
 
+        if(!valid)
+        {
+          free(random_paths);
+          random_paths = get_random_paths(paths, n, m);
+          free_image(sized);
+          free_image(sized_m);
+          i--;
+        }
+        else
+        {
+          d.X.vals[i] = sized.data;
+          d.y.vals[i] = sized_m.data;
+        }
 
+        //printf("Loading data: %d %d %d %d %s\n", valid, i, dx, dy, random_paths[i]);
        /*
            //image rgb = mask_to_rgb(sized_m, classes);
-           show_image(mask, "gt");
+           show_image(sized_m, "gt");
            show_image(sized, "img");
-           cvWaitKey(10);
+           show_image(orig, "orig");
+           cvWaitKey(1000);
            //free_image(rgb);
         */
         free_image(orig);

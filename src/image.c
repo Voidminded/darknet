@@ -874,6 +874,36 @@ image crop_image(image im, int dx, int dy, int w, int h)
     return cropped;
 }
 
+// Added by Sep for cropping segmentation GTs:
+//
+image crop_seg_gt(image im, int dx, int dy, int w, int h, int* valid)
+{
+    image cropped = make_image(w, h, im.c);
+    int i, j, k;
+    for(k = 0; k < im.c; ++k){
+        for(j = 0; j < h; ++j){
+            for(i = 0; i < w; ++i){
+                int r = j + dy;
+                int c = i + dx;
+                float val = 0;
+                r = constrain_int(r, 0, im.h-1);
+                c = constrain_int(c, 0, im.w-1);
+                val = get_pixel(im, c, r, k);
+                if( val > 1e-3)
+                {
+                  *valid = 1;
+                  if( k == 0)// R -> c[0] -> x
+                    val = fmin( 1.0, fmax( 0, val - ((float)( dx - 1) / (float)im.w)) * ( (float) im.w / (float)w));
+                  else if( k == 1) // G -> c[1] -> y
+                    val = fmin( 1.0, fmax( 0, val - ((float)( dy - 1) / (float)im.h)) * ( (float) im.h / (float)h));
+                }
+                set_pixel(cropped, i, j, k, val);
+            }
+        }
+    }
+    return cropped;
+}
+
 int best_3d_shift_r(image a, image b, int min, int max)
 {
     if(min == max) return min;
@@ -1388,6 +1418,14 @@ image resize_image(image im, int w, int h)
     return resized;
 }
 
+void test_gt_crop(char *filename)
+{
+    image im = load_image(filename, 0,0, 3);
+    int val;
+    image gt = crop_seg_gt( im, 1000, 400, 600, 600, &val);
+    save_image( gt, "gt");
+    return;
+}
 
 void test_resize(char *filename)
 {
