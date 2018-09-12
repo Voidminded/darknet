@@ -714,6 +714,27 @@ void save_image_png(image im, const char *name)
     if(!success) fprintf(stderr, "Failed to write image %s\n", buff);
 }
 
+void save_image_hdr(image im, const char *name)
+{
+    char buff[256];
+    fprintf(stderr, "%s (%d)\n", name, windows);
+    sprintf(buff, "%s.png", name);
+    float *data = calloc(im.w*im.h*im.c, sizeof(float));
+    int i,k;
+    for(k = 0; k < im.c; ++k){
+        for(i = 0; i < im.w*im.h; ++i){
+            data[i*im.c+k] = im.data[i + k*im.w*im.h];
+        }
+    }
+    fprintf(stderr, "converted\n");
+    int success = stbi_write_hdr(buff, im.w, im.h, im.c, data);
+    fprintf(stderr, "done\n");
+
+    free(data);
+    if(!success) fprintf(stderr, "Failed to write image %s\n", buff);
+    else fprintf(stderr, "done\n");
+}
+
 void save_image(image im, const char *name)
 {
 #ifdef OPENCV
@@ -1497,6 +1518,30 @@ image load_image_stb(char *filename, int channels)
                 int dst_index = i + w*j + w*h*k;
                 int src_index = k + c*i + c*w*j;
                 im.data[dst_index] = (float)data[src_index]/255.;
+            }
+        }
+    }
+    free(data);
+    return im;
+}
+
+image load_image_16(char *filename, int channels)
+{
+    int w, h, c;
+    unsigned short *data = stbi_load_16(filename, &w, &h, &c, channels);
+    if (!data) {
+        fprintf(stderr, "Cannot load image \"%s\"\nSTB Reason: %s\n", filename, stbi_failure_reason());
+        exit(0);
+    }
+    if(channels) c = channels;
+    int i,j,k;
+    image im = make_image(w, h, c);
+    for(k = 0; k < c; ++k){
+        for(j = 0; j < h; ++j){
+            for(i = 0; i < w; ++i){
+                int dst_index = i + w*j + w*h*k;
+                int src_index = k + c*i + c*w*j;
+                im.data[dst_index] = (float)data[src_index]/65535.;
             }
         }
     }

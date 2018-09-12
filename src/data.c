@@ -745,7 +745,7 @@ image get_seg_image(char *path, int w, int h)
     find_replace(labelpath, ".jpeg", ".tiff", labelpath);
     find_replace(labelpath, ".JPG", ".tiff", labelpath);
     find_replace(labelpath, ".JPEG", ".tiff", labelpath);
-    image mask = load_image_color(labelpath, 0, 0); 
+    image mask = load_image_16(labelpath, 3); 
     return mask;
 }
 

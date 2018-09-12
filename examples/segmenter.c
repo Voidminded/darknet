@@ -102,12 +102,9 @@ void train_segmenter(char *datacfg, char *cfgfile, char *weightfile, int *gpus, 
             image im = float_to_image(net->w, net->h, net->c, train.X.vals[net->batch*(net->subdivisions-1)]);
             //image mask = mask_to_rgb(tr);
             //image prmask = mask_to_rgb(pred);
-            show_image(im, "input");
-            show_image(pred, "pred");
-            show_image(tr, "truth");
-#ifdef OPENCV
-            cvWaitKey(100);
-#endif
+            show_image(im, "input", 3);
+            show_image(pred, "pred", 3);
+            show_image(tr, "truth", 3);
             //free_image(tr);
             free_image(pred);
         }

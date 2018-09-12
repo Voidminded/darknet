@@ -240,11 +240,11 @@ STBIWDEF void stbi_flip_vertically_on_write(int flip_boolean);
 
 #ifdef STB_IMAGE_WRITE_STATIC
 static int stbi__flip_vertically_on_write=0;
-static int stbi_write_png_compression_level = 8;
+static int stbi_write_png_compression_level = 0;
 static int stbi_write_tga_with_rle = 1;
 static int stbi_write_force_png_filter = -1;
 #else
-int stbi_write_png_compression_level = 8;
+int stbi_write_png_compression_level = 0;
 int stbi__flip_vertically_on_write=0;
 int stbi_write_tga_with_rle = 1;
 int stbi_write_force_png_filter = -1;
@@ -694,7 +694,7 @@ static int stbi_write_hdr_core(stbi__write_context *s, int x, int y, int comp, f
       s->func(s->context, buffer, len);
 
       for(i=0; i < y; i++)
-         stbiw__write_hdr_scanline(s, x, comp, scratch, data + comp*x*(stbi__flip_vertically_on_write ? y-1-i : i)*x);
+        stbiw__write_hdr_scanline(s, x, comp, scratch, data + comp*(stbi__flip_vertically_on_write ? y-1-i : i)*x);
       STBIW_FREE(scratch);
       return 1;
    }

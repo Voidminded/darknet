@@ -403,6 +403,11 @@ void visualize(char *cfgfile, char *weightfile)
 
 int main(int argc, char **argv)
 {
+    //image im = load_image_16("/local_home/Dev/birdies/birdgen/output/label/sequence_244_cam2_frame_12_gt.png", 3);
+
+    //save_image_hdr(im, "testhdr");
+    //show_image(im, "im", 3000);
+
     //test_gt_crop("gt.png");
     //test_resize("data/bad.jpg");
     //test_box();
