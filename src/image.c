@@ -695,6 +695,33 @@ void save_image_jpg(image p, const char *name)
     cvReleaseImage(&disp);
     free_image(copy);
 }
+
+void save_image_16(image p, const char *name)
+{
+    image copy = copy_image(p);
+    if(p.c == 3) rgbgr_image(copy);
+    int x,y,k;
+
+    char buff[256];
+    sprintf(buff, "%s.png", name);
+
+    IplImage *disp = cvCreateImageHeader(cvSize(p.w,p.h), IPL_DEPTH_16U, p.c);
+    int step = disp->widthStep/sizeof(unsigned short);
+    unsigned short *data = calloc(p.w*p.h*p.c, sizeof(unsigned short));
+    for(y = 0; y < p.h; ++y){
+        for(x = 0; x < p.w; ++x){
+            for(k= 0; k < p.c; ++k){
+                data[y*step + x*p.c + k] = (unsigned short)(get_pixel(copy,x,y,k)*65535);
+            }
+        }
+    }
+    cvSetData( disp, data, p.w*sizeof( unsigned short)*p.c);
+    //memset( disp->imageData, data, sizeof( unsigned short)*p.w*p.h*p.c);
+    cvSaveImage(buff, disp,0);
+    cvReleaseImageHeader(&disp);
+    free_image(copy);
+    free( data);
+}
 #endif
 
 void save_image_png(image im, const char *name)

@@ -651,7 +651,7 @@ void harmless_update_network_gpu(network *net);
 image get_label(image **characters, char *string, int size);
 void draw_label(image a, int r, int c, image label, const float *rgb);
 void save_image_png(image im, const char *name);
-void save_image_hdr(image im, const char *name);
+void save_image_16(image im, const char *name);
 void get_next_batch(data d, int n, int offset, float *X, float *y);
 void grayscale_image_3c(image im);
 void normalize_image(image p);
