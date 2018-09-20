@@ -944,7 +944,7 @@ image crop_seg_gt(image im, int dx, int dy, int w, int h, int* valid)
                 if( val > 1e-9)
                 {
                   *valid = 1;
-                  if( k == 0)// R -> c[0] -> x
+                  if( k == 2)// B -> c[2] -> x
                     val = fmin( 1.0, fmax( 0, val - ((float)( dx - 1) / (float)im.w)) * ( (float) im.w / (float)w));
                   else if( k == 1) // G -> c[1] -> y
                     val = fmin( 1.0, fmax( 0, val - ((float)( dy - 1) / (float)im.h)) * ( (float) im.h / (float)h));
