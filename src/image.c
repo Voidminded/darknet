@@ -941,7 +941,7 @@ image crop_seg_gt(image im, int dx, int dy, int w, int h, int* valid)
                 r = constrain_int(r, 0, im.h-1);
                 c = constrain_int(c, 0, im.w-1);
                 val = get_pixel(im, c, r, k);
-                if( val > 1e-3)
+                if( val > 1e-9)
                 {
                   *valid = 1;
                   if( k == 0)// R -> c[0] -> x
