@@ -52,7 +52,7 @@ void train_segmenter(char *datacfg, char *cfgfile, char *weightfile, int *gpus, 
     load_args args = {0};
     args.w = net->w;
     args.h = net->h;
-    args.threads = 6;
+    args.threads = 4;
     args.scale = div;
 
     args.min = net->min_crop;
@@ -128,6 +128,10 @@ void train_segmenter(char *datacfg, char *cfgfile, char *weightfile, int *gpus, 
             char pred_name[9];
             sprintf( pred_name, "%d", get_current_batch(net)/100);
             save_image_16(pred, pred_name);
+            image diff = image_distance( tr, pred);
+            char diff_name[9];
+            sprintf( diff_name, "%d_diff", get_current_batch(net)/100);
+            save_image_16(diff, diff_name);
             sprintf(buff, "%s/%s.backup",backup_directory,base);
             save_weights(net, buff);
         }
