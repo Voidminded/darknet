@@ -377,6 +377,16 @@ image image_distance(image a, image b)
     return dist;
 }
 
+image image_diff(image a, image b)
+{
+    int i;
+    image diff = make_image(a.w, a.h, a.c);
+    for(i = 0; i < a.h*a.w*a.c; ++i){
+        diff.data[i] = 0.5+(a.data[i]-b.data[i])/0.2;
+    }
+    return diff;
+}
+
 void ghost_image(image source, image dest, int dx, int dy)
 {
     int x,y,k;

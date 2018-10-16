@@ -709,6 +709,7 @@ image resize_max(image im, int max);
 image threshold_image(image im, float thresh);
 image mask_to_rgb(image mask);
 image image_distance(image a, image b);
+image image_diff(image a, image b);
 int resize_network(network *net, int w, int h);
 void free_matrix(matrix m);
 void test_resize(char *filename);
