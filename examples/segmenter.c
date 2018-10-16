@@ -52,7 +52,7 @@ void train_segmenter(char *datacfg, char *cfgfile, char *weightfile, int *gpus, 
     load_args args = {0};
     args.w = net->w;
     args.h = net->h;
-    args.threads = 4;
+    args.threads = 12;
     args.scale = div;
 
     args.min = net->min_crop;
@@ -121,17 +121,18 @@ void train_segmenter(char *datacfg, char *cfgfile, char *weightfile, int *gpus, 
         }
         if( get_current_batch(net)%100 == 0){
             char buff[256];
+            char file_name[21];
             image tr = float_to_image(net->w/div, net->h/div, 3, train.y.vals[net->batch*(net->subdivisions-1)]);
-            save_image_16(tr, "truth");
+            sprintf( file_name, "%d_truth", get_current_batch(net)/100);
+            save_image_16(tr, file_name);
             image im = float_to_image(net->w, net->h, net->c, train.X.vals[net->batch*(net->subdivisions-1)]);
-            save_image_16(im, "input");
-            char pred_name[9];
-            sprintf( pred_name, "%d", get_current_batch(net)/100);
-            save_image_16(pred, pred_name);
+            sprintf( file_name, "%d_input", get_current_batch(net)/100);
+            save_image(im, file_name);
+            sprintf( file_name, "%d", get_current_batch(net)/100);
+            save_image_16(pred, file_name);
             image diff = image_distance( tr, pred);
-            char diff_name[9];
-            sprintf( diff_name, "%d_diff", get_current_batch(net)/100);
-            save_image_16(diff, diff_name);
+            sprintf( file_name, "%d_diff", get_current_batch(net)/100);
+            save_image_16(diff, file_name);
             sprintf(buff, "%s/%s.backup",backup_directory,base);
             save_weights(net, buff);
         }
