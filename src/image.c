@@ -382,7 +382,7 @@ image image_diff(image a, image b)
     int i;
     image diff = make_image(a.w, a.h, a.c);
     for(i = 0; i < a.h*a.w*a.c; ++i){
-        diff.data[i] = 0.5+(a.data[i]-b.data[i])/0.2;
+        diff.data[i] = 0.5+(a.data[i]-b.data[i])/2.0;
     }
     return diff;
 }
