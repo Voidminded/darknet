@@ -54,7 +54,7 @@ typedef struct{
 tree *read_tree(char *filename);
 
 typedef enum{
-    LOGISTIC, RELU, RELIE, LINEAR, RAMP, TANH, PLSE, LEAKY, ELU, LOGGY, STAIR, HARDTAN, LHTAN, SELU
+    LOGISTIC, RELU, RELIE, LINEAR, RAMP, TANH, PLSE, LEAKY, ELU, LOGGY, STAIR, HARDTAN, LHTAN, SELU, SIGM9
 } ACTIVATION;
 
 typedef enum{

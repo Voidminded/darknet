@@ -709,7 +709,7 @@ void save_image_jpg(image p, const char *name)
 void save_image_16(image p, const char *name)
 {
     image copy = copy_image(p);
-    if(p.c == 3) rgbgr_image(copy);
+    if(p.c >= 3) rgbgr_image(copy);
     int x,y,k;
 
     char buff[256];
@@ -960,6 +960,36 @@ image crop_seg_gt(image im, int dx, int dy, int w, int h, int* valid)
                     val = fmin( 1.0, fmax( 0, val - ((float)( dy - 1) / (float)im.h)) * ( (float) im.h / (float)h));
                 }
                 set_pixel(cropped, i, j, k, val);
+            }
+        }
+    }
+    return cropped;
+}
+
+image crop_seg_gt_conf(image im, int dx, int dy, int w, int h, int* valid)
+{
+    image cropped = make_image(w, h, im.c+1);
+    int i, j, k;
+    for(k = 0; k < im.c; ++k){
+        for(j = 0; j < h; ++j){
+            for(i = 0; i < w; ++i){
+                int r = j + dy;
+                int c = i + dx;
+                float val = 0, alpha = 0;
+                r = constrain_int(r, 0, im.h-1);
+                c = constrain_int(c, 0, im.w-1);
+                val = get_pixel(im, c, r, k);
+                if( val > 1e-9)
+                {
+                  *valid = 1;
+                  if( k == 2)// B -> c[2] -> x
+                    val = fmin( 1.0, fmax( 0, val - ((float)( dx - 1) / (float)im.w)) * ( (float) im.w / (float)w));
+                  else if( k == 1) // G -> c[1] -> y
+                    val = fmin( 1.0, fmax( 0, val - ((float)( dy - 1) / (float)im.h)) * ( (float) im.h / (float)h));
+                  alpha = 1.0;
+                }
+                set_pixel(cropped, i, j, k, val);
+                set_pixel(cropped, i, j, 3, alpha);
             }
         }
     }
@@ -1482,10 +1512,10 @@ image resize_image(image im, int w, int h)
 
 void test_gt_crop(char *filename)
 {
-    image im = load_image(filename, 0,0, 3);
+    image im = load_image_16(filename, 3);
     int val;
-    image gt = crop_seg_gt( im, 1000, 400, 600, 600, &val);
-    save_image( gt, "gt");
+    image gt = crop_seg_gt( im, 0, 0, 600, 600, &val);
+    save_image_16( gt, "testnalpha");
     return;
 }
 

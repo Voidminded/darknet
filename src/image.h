@@ -28,6 +28,7 @@ void scale_image(image m, float s);
 image rotate_crop_image(image im, float rad, float s, int w, int h, float dx, float dy, float aspect);
 image random_crop_image(image im, int w, int h);
 image crop_seg_gt(image im, int dx, int dy, int w, int h, int* valid);
+image crop_seg_gt_conf(image im, int dx, int dy, int w, int h, int* valid);
 image random_augment_image(image im, float angle, float aspect, int low, int high, int w, int h);
 augment_args random_augment_args(image im, float angle, float aspect, int low, int high, int w, int h);
 void letterbox_image_into(image im, int w, int h, image boxed);

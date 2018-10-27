@@ -30,6 +30,7 @@ static inline float hardtan_activate(float x)
 }
 static inline float linear_activate(float x){return x;}
 static inline float logistic_activate(float x){return 1./(1. + exp(-x));}
+static inline float logistic9_activate(float x){return 1./(1. + exp(-x/9.0));}
 static inline float loggy_activate(float x){return 2./(1. + exp(-x)) - 1;}
 static inline float relu_activate(float x){return x*(x>0);}
 static inline float elu_activate(float x){return (x >= 0)*x + (x < 0)*(exp(x)-1);}
@@ -64,6 +65,7 @@ static inline float hardtan_gradient(float x)
 }
 static inline float linear_gradient(float x){return 1;}
 static inline float logistic_gradient(float x){return (1-x)*x;}
+static inline float logistic9_gradient(float x){return (1-x)*x/9.0;}
 static inline float loggy_gradient(float x)
 {
     float y = (x+1.)/2.;
