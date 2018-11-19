@@ -607,16 +607,19 @@ image *get_weights(convolutional_layer l)
 
 image *visualize_convolutional_layer(convolutional_layer l, char *window, image *prev_weights)
 {
+#ifdef GPU
+    cuda_pull_array(l.output_gpu, l.output, l.outputs);
+#endif
     image *single_weights = get_weights(l);
-    //show_images(single_weights, l.n, window);
-    save_image(*single_weights, window);
+    show_images(single_weights, l.n, window);
+    //save_image(*single_weights, window);
 
     image delta = get_convolutional_image(l);
     image dc = collapse_image_layers(delta, 1);
     char buff[256];
     sprintf(buff, "%s: Output", window);
     //show_image(dc, buff);
-    //save_image(dc, buff);
+    save_image(dc, buff);
     free_image(dc);
     return single_weights;
 }

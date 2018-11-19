@@ -1,6 +1,7 @@
 #include "darknet.h"
 #include <sys/time.h>
 #include <assert.h>
+#include "image.h"
 
 static float get_pixel(image m, int x, int y, int c)
 {
@@ -345,6 +346,43 @@ void predict_segmenter(char *datafile, char *cfg, char *weights, char *filename)
     }
 }
 
+void predict_visualize_single_crop(char *datafile, char *cfg, char *weights, char *filename)
+{
+    network *net = load_network(cfg, weights, 0);
+    set_batch_network(net, 1);
+
+    char buff[256];
+    char *input = buff;
+    if(filename){
+        strncpy(input, filename, 256);
+    }else{
+        printf("Enter Image Path: ");
+        fflush(stdout);
+        input = fgets(input, 256, stdin);
+        if(!input) return;
+        strtok(input, "\n");
+    }
+    image im = load_image_color(input, 0, 0);
+    float *X = im.data;
+    network_predict(net, X);
+    int i;
+    for(i = net->n-4; i >= 0; --i){
+      image m = get_network_image_layer(net, i);
+      char buff[256];
+      sprintf(buff, "Layer %d Output", i);
+      image collapsed = collapse_image_layers(m, 1);
+      save_image( collapsed, buff);
+    }
+    //visualize_network(net);
+    image pred = get_network_image(net);
+    show_image(im, "orig", 1);
+    show_image(pred, "pred", 0);
+    char pred_name[256];
+    sprintf( pred_name, "results/pred_%s", basecfg( filename));
+    save_image_16(pred, pred_name);
+    free_image(im);
+    free_image(pred);
+}
 
 void demo_segmenter(char *datacfg, char *cfg, char *weights, int cam_index, const char *filename)
 {
@@ -438,6 +476,7 @@ void run_segmenter(int argc, char **argv)
     else if(0==strcmp(argv[2], "train")) train_segmenter(data, cfg, weights, gpus, ngpus, clear, display);
     else if(0==strcmp(argv[2], "demo")) demo_segmenter(data, cfg, weights, cam_index, filename);
     else if(0==strcmp(argv[2], "batchtest")) batch_predict_segmenter(data, cfg, weights, filename);
+    else if(0==strcmp(argv[2], "visualize")) predict_visualize_single_crop(data, cfg, weights, filename);
 }
 
 
