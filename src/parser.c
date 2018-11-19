@@ -670,7 +670,7 @@ void parse_net_options(list *options, network *net)
     if(net->adam){
         net->B1 = option_find_float(options, "B1", .9);
         net->B2 = option_find_float(options, "B2", .999);
-        net->eps = option_find_float(options, "eps", .0000001);
+        net->eps = option_find_float(options, "eps", .00000001);
     }
 
     net->h = option_find_int_quiet(options, "height",0);

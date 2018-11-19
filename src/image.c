@@ -996,6 +996,27 @@ image crop_seg_gt_conf(image im, int dx, int dy, int w, int h, int* valid)
     return cropped;
 }
 
+image seg_gt_fill_conf(image im)
+{
+    image alphad = make_image(im.w, im.h, im.c+1);
+    int i, j, k;
+    for(k = 0; k < im.c; ++k){
+        for(j = 0; j < im.h; ++j){
+            for(i = 0; i < im.w; ++i){
+                float alpha = 0., val = 0.;
+                val = get_pixel(im, i, j, k);
+                if( val > 1e-6)
+                {
+                  alpha = 1.0;
+                  set_pixel( alphad, i, j, k, val);
+                  set_pixel( alphad, i, j, 3, alpha);
+                }
+            }
+        }
+    }
+    return alphad;
+}
+
 int best_3d_shift_r(image a, image b, int min, int max)
 {
     if(min == max) return min;
@@ -1514,8 +1535,8 @@ void test_gt_crop(char *filename)
 {
     image im = load_image_16(filename, 3);
     int val;
-    image gt = crop_seg_gt( im, 0, 0, 600, 600, &val);
-    save_image_16( gt, "testnalpha");
+    image gt = crop_seg_gt( im, 896, 0, 608, 608, &val);
+    save_image_16( gt, "testcrop");
     return;
 }
 

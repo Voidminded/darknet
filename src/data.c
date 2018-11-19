@@ -738,9 +738,9 @@ image get_segmentation_image2(char *path, int w, int h, int classes)
 image get_seg_image(char *path, int w, int h)
 {
     char labelpath[4096];
-    find_replace(path, ".png", "_gt.png", labelpath);
+    //find_replace(path, ".png", "_gt.png", labelpath);
     //find_replace(path, "img", "gt", labelpath);
-    find_replace(labelpath, "image", "label", labelpath);
+    find_replace(path, "image", "label", labelpath);
     find_replace(labelpath, "JPEGImages", "mask", labelpath);
     find_replace(labelpath, ".jpeg", ".tiff", labelpath);
     find_replace(labelpath, ".JPG", ".tiff", labelpath);
@@ -876,6 +876,45 @@ data load_data_seg_conf(int n, char **paths, int m, int w, int h, int classes, i
            //free_image(rgb);
         */
         free_image(orig);
+        free_image(mask);
+    }
+    free(random_paths);
+    return d;
+}
+
+data load_data_seg_full(int n, char **paths, int m, int w, int h, int classes, int min, int max, float angle, float aspect, float hue, float saturation, float exposure, int div)
+{
+    char **random_paths = get_random_paths(paths, n, m);
+    int i;
+    data d = {0};
+    d.shallow = 0;
+
+    d.X.rows = n;
+    d.X.vals = calloc(d.X.rows, sizeof(float*));
+    d.X.cols = h*w*3;
+
+
+    d.y.rows = n;
+    d.y.cols = h*w*4;
+    d.y.vals = calloc(d.X.rows, sizeof(float*));
+
+    for(i = 0; i < n; ++i){
+        image orig = load_image_color(random_paths[i], 0, 0);
+        random_distort_image(orig, hue, saturation, exposure);
+        image mask = get_seg_image(random_paths[i], orig.w, orig.h);
+        image truth = seg_gt_fill_conf( mask);
+        d.X.vals[i] = orig.data;
+        d.y.vals[i] = truth.data;
+
+        //printf("Loading data: %d %d %d %d %s\n", valid, i, dx, dy, random_paths[i]);
+       /*
+           //image rgb = mask_to_rgb(sized_m, classes);
+           show_image(sized_m, "gt");
+           show_image(sized, "img");
+           show_image(orig, "orig");
+           cvWaitKey(1000);
+           //free_image(rgb);
+        */
         free_image(mask);
     }
     free(random_paths);
@@ -1210,7 +1249,7 @@ void *load_thread(void *ptr)
     } else if (a.type == INSTANCE_DATA){
         *a.d = load_data_mask(a.n, a.paths, a.m, a.w, a.h, a.classes, a.num_boxes, a.coords, a.min, a.max, a.angle, a.aspect, a.hue, a.saturation, a.exposure);
     } else if (a.type == SEGMENTATION_DATA){
-        *a.d = load_data_seg(a.n, a.paths, a.m, a.w, a.h, a.classes, a.min, a.max, a.angle, a.aspect, a.hue, a.saturation, a.exposure, a.scale);
+        *a.d = load_data_seg_full(a.n, a.paths, a.m, a.w, a.h, a.classes, a.min, a.max, a.angle, a.aspect, a.hue, a.saturation, a.exposure, a.scale);
     } else if (a.type == REGION_DATA){
         *a.d = load_data_region(a.n, a.paths, a.m, a.w, a.h, a.num_boxes, a.classes, a.jitter, a.hue, a.saturation, a.exposure);
     } else if (a.type == DETECTION_DATA){

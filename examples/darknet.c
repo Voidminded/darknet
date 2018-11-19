@@ -407,7 +407,7 @@ int main(int argc, char **argv)
     //save_image_16( sized_m, "testalpha");
     //show_image(im, "im", 3000);
 
-    //test_gt_crop("/local_home/Dev/birdies/birdgen/output/label/sequence_244_cam2_frame_12_gt.png");
+    //test_gt_crop("/local_home/Dev/birdies/birdgen/output/label/sequence_0_cam_0_frame_0.png");
     //return 0;
     //test_resize("data/bad.jpg");
     //test_box();

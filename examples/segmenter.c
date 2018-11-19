@@ -2,6 +2,18 @@
 #include <sys/time.h>
 #include <assert.h>
 
+static float get_pixel(image m, int x, int y, int c)
+{
+    assert(x < m.w && y < m.h && c < m.c);
+    return m.data[c*m.h*m.w + y*m.w + x];
+}
+static void set_pixel(image m, int x, int y, int c, float val)
+{
+    if (x < 0 || y < 0 || c < 0 || x >= m.w || y >= m.h || c >= m.c) return;
+    assert(x < m.w && y < m.h && c < m.c);
+    m.data[c*m.h*m.w + y*m.w + x] = val;
+}
+
 void train_segmenter(char *datacfg, char *cfgfile, char *weightfile, int *gpus, int ngpus, int clear, int display)
 {
     int i;
@@ -163,6 +175,88 @@ void train_segmenter(char *datacfg, char *cfgfile, char *weightfile, int *gpus, 
     fclose(train_csv_file);
 }
 
+void batch_predict_segmenter(char *datafile, char *cfg, char *weights, char *filename)
+{
+  network *net = load_network(cfg, weights, 0);
+  set_batch_network(net, 1);
+
+  char buff[256];
+  char *input = buff;
+  list *plist = get_paths(filename);
+  char **paths = (char **)list_to_array(plist);
+  int n;
+  for( n=0; n < plist->size; ++n)
+  {
+    strncpy(input, paths[n], 256);
+    image im = load_image_color(input, 0, 0);
+    image result = make_image(im.w, im.h, im.c);
+    int oi ,oj;
+    for( oi = 0; oi < 4; ++oi)
+    {
+      for( oj = 0; oj < 2; oj++)
+      {
+        int dx, dy;
+        switch( oi)
+        {
+          case 0:
+            dx = 0;
+            break;
+
+          case 1:
+            dx = 416;
+            break;
+
+          case 2:
+            dx = 896;
+            break;
+
+          case 3:
+            dx = 1312;
+            break;
+        }
+        if( oj)
+          dy = 472;
+        else
+          dy = 0;
+        image sized = crop_image(im, dx, dy, net->w, net->h);
+        float *X = sized.data;
+        network_predict(net, X);
+        image pred = get_network_image(net);
+        int i, j, k;
+        float val;
+        for(k = 0; k < 3; ++k){
+          for(j = 0; j < pred.h; ++j){
+            for(i = 0; i < pred.w; ++i){
+              int r = j + dy;
+              int c = i + dx;
+              val = get_pixel(pred, i, j, k);
+              if( get_pixel(pred, i, j, 3) > 0.5)
+              {
+                if( k == 2)// B -> c[2] -> x
+                  val = fmin( 1.0, fmax( 0, (val * ( (float) net->w / (float)im.w)) + ((float)( dx - 1) / (float)im.w)));
+                else if( k == 1) // G -> c[1] -> y
+                  val = fmin( 1.0, fmax( 0, (val * ( (float) net->h / (float)im.h)) + ((float)( dy - 1) / (float)im.h)));
+                float cur_val = get_pixel(result, c, r, k);
+                if( cur_val > 2*1e-5)
+                  val = (val+cur_val)/2.;
+              }
+              set_pixel(result, c, r, k, val);
+            }
+          }
+        }
+      }
+    }
+    //show_image(im, "orig", 1);
+    //show_image(result, "pred", 0);
+    char pred_name[256];
+    sprintf( pred_name, "results/pred_%s", basecfg( input));
+    save_image_16(result, pred_name);
+    free_image(im);
+    free_image(result);
+  }
+
+}
+
 void predict_segmenter(char *datafile, char *cfg, char *weights, char *filename)
 {
     network *net = load_network(cfg, weights, 0);
@@ -183,20 +277,70 @@ void predict_segmenter(char *datafile, char *cfg, char *weights, char *filename)
             strtok(input, "\n");
         }
         image im = load_image_color(input, 0, 0);
-        image sized = letterbox_image(im, net->w, net->h);
+        image result = make_image(im.w, im.h, im.c);
+        int oi ,oj;
+        for( oi = 0; oi < 4; ++oi)
+        {
+          for( oj = 0; oj < 2; oj++)
+          {
+            int dx, dy;
+            switch( oi)
+            {
+              case 0:
+                dx = 0;
+                break;
 
-        float *X = sized.data;
-        time=clock();
-        float *predictions = network_predict(net, X);
-        image pred = get_network_image(net);
-        image prmask = mask_to_rgb(pred);
-        printf("Predicted: %f\n", predictions[0]);
-        printf("%s: Predicted in %f seconds.\n", input, sec(clock()-time));
-        show_image(sized, "orig", 1);
-        show_image(prmask, "pred", 0);
+              case 1:
+                dx = 416;
+                break;
+
+              case 2:
+                dx = 896;
+                break;
+
+              case 3:
+                dx = 1312;
+                break;
+            }
+            if( oj)
+              dy = 472;
+            else
+              dy = 0;
+            image sized = crop_image(im, dx, dy, net->w, net->h);
+            float *X = sized.data;
+            network_predict(net, X);
+            image pred = get_network_image(net);
+            int i, j, k;
+            float val;
+            for(k = 0; k < 3; ++k){
+              for(j = 0; j < pred.h; ++j){
+                for(i = 0; i < pred.w; ++i){
+                  int r = j + dy;
+                  int c = i + dx;
+                  val = get_pixel(pred, i, j, k);
+                  if( get_pixel(pred, i, j, 3) > 0.5)
+                  {
+                    if( k == 2)// B -> c[2] -> x
+                      val = fmin( 1.0, fmax( 0, (val * ( (float) net->w / (float)im.w)) + ((float)( dx - 1) / (float)im.w)));
+                    else if( k == 1) // G -> c[1] -> y
+                      val = fmin( 1.0, fmax( 0, (val * ( (float) net->h / (float)im.h)) + ((float)( dy - 1) / (float)im.h)));
+                    float cur_val = get_pixel(result, c, r, k);
+                    if( cur_val > 2*1e-5)
+                      val = (val+cur_val)/2.;
+                  }
+                  set_pixel(result, c, r, k, val);
+                }
+              }
+            }
+          }
+        }
+        //show_image(im, "orig", 1);
+        //show_image(result, "pred", 0);
+        char pred_name[256];
+        sprintf( pred_name, "results/pred_%s", basecfg( filename));
+        save_image_16(result, pred_name);
         free_image(im);
-        free_image(sized);
-        free_image(prmask);
+        free_image(result);
         if (filename) break;
     }
 }
@@ -293,6 +437,7 @@ void run_segmenter(int argc, char **argv)
     if(0==strcmp(argv[2], "test")) predict_segmenter(data, cfg, weights, filename);
     else if(0==strcmp(argv[2], "train")) train_segmenter(data, cfg, weights, gpus, ngpus, clear, display);
     else if(0==strcmp(argv[2], "demo")) demo_segmenter(data, cfg, weights, cam_index, filename);
+    else if(0==strcmp(argv[2], "batchtest")) batch_predict_segmenter(data, cfg, weights, filename);
 }
 
 
