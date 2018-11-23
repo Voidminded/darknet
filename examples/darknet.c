@@ -1,5 +1,5 @@
 #include "darknet.h"
-
+#include "image.h"
 #include <time.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -412,6 +412,13 @@ int main(int argc, char **argv)
     //test_resize("data/bad.jpg");
     //test_box();
     //test_convolutional_layer();
+
+    //image im = load_image_color( "/local_home/Dev/birdies/birdgen/tetpit/image/sequence_8_cam1_frame_29.png", 0, 0);
+    //image sized = crop_image_coordconv( im, 300, 300, 608, 608);
+    //image collapesed = collapse_image_layers( sized, 1);
+    //show_image( collapesed, "im", 0);
+    //return;
+
     if(argc < 2){
         fprintf(stderr, "usage: %s <function>\n", argv[0]);
         return 0;

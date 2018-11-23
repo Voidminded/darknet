@@ -921,6 +921,57 @@ data load_data_seg_full(int n, char **paths, int m, int w, int h, int classes, i
     return d;
 }
 
+data load_data_seg_conf_coord(int n, char **paths, int m, int w, int h, int classes, int min, int max, float angle, float aspect, float hue, float saturation, float exposure, int div)
+{
+    char **random_paths = get_random_paths(paths, n, m);
+    int i;
+    data d = {0};
+    d.shallow = 0;
+
+    d.X.rows = n;
+    d.X.vals = calloc(d.X.rows, sizeof(float*));
+    d.X.cols = h*w*5;
+
+
+    d.y.rows = n;
+    d.y.cols = h*w*4;
+    d.y.vals = calloc(d.X.rows, sizeof(float*));
+
+    int valid;
+    for(i = 0; i < n; ++i){
+        image orig = load_image_color(random_paths[i], 0, 0);
+
+        int dx = rand_int(0, orig.w - w);
+        int dy = rand_int(0, orig.h - h);
+        image sized = crop_image_coordconv(orig, dx, dy, w, h);
+
+        //Can't distort right now....
+        //random_distort_image(sized, hue, saturation, exposure);
+        image mask = get_seg_image(random_paths[i], orig.w, orig.h);
+        valid = 0;
+        image sized_m = crop_seg_gt_conf( mask, dx, dy, w, h, &valid);
+
+        if(!valid)
+        {
+          free(random_paths);
+          random_paths = get_random_paths(paths, n, m);
+          free_image(sized);
+          free_image(sized_m);
+          i--;
+        }
+        else
+        {
+          d.X.vals[i] = sized.data;
+          d.y.vals[i] = sized_m.data;
+        }
+
+        free_image(orig);
+        free_image(mask);
+    }
+    free(random_paths);
+    return d;
+}
+
 data load_data_iseg(int n, char **paths, int m, int w, int h, int classes, int boxes, int div, int min, int max, float angle, float aspect, float hue, float saturation, float exposure)
 {
     char **random_paths = get_random_paths(paths, n, m);

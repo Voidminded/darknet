@@ -936,6 +936,38 @@ image crop_image(image im, int dx, int dy, int w, int h)
     return cropped;
 }
 
+image crop_image_coordconv(image im, int dx, int dy, int w, int h)
+{
+    image cropped = make_image(w, h, im.c+2);
+    int i, j, k;
+    for(k = 0; k < im.c; ++k){
+        for(j = 0; j < h; ++j){
+            for(i = 0; i < w; ++i){
+                int r = j + dy;
+                int c = i + dx;
+                float val = 0;
+                r = constrain_int(r, 0, im.h-1);
+                c = constrain_int(c, 0, im.w-1);
+                val = get_pixel(im, c, r, k);
+                set_pixel(cropped, i, j, k, val);
+            }
+        }
+    }
+    for(j = 0; j < h; ++j){
+        for(i = 0; i < w; ++i){
+            //int r = j + dy;
+            //int c = i + dx;
+            //r = constrain_int(r, 0, im.h-1);
+            //c = constrain_int(c, 0, im.w-1);
+            //set_pixel(cropped, i, j, 3, (float)c/im.w);
+            //set_pixel(cropped, i, j, 4, (float)r/im.h);
+            set_pixel(cropped, i, j, 3, (float)i/w);
+            set_pixel(cropped, i, j, 4, (float)j/h);
+        }
+    }
+    return cropped;
+}
+
 // Added by Sep for cropping segmentation GTs:
 //
 image crop_seg_gt(image im, int dx, int dy, int w, int h, int* valid)

@@ -245,6 +245,7 @@ void batch_predict_segmenter(char *datafile, char *cfg, char *weights, char *fil
             }
           }
         }
+        free_image(sized);
       }
     }
     //show_image(im, "orig", 1);
@@ -373,7 +374,7 @@ void predict_visualize_single_crop(char *datafile, char *cfg, char *weights, cha
       image collapsed = collapse_image_layers(m, 1);
       save_image( collapsed, buff);
     }
-    //visualize_network(net);
+    visualize_network(net);
     image pred = get_network_image(net);
     show_image(im, "orig", 1);
     show_image(pred, "pred", 0);
