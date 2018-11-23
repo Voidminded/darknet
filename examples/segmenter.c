@@ -135,7 +135,7 @@ void train_segmenter(char *datacfg, char *cfgfile, char *weightfile, int *gpus, 
         if( get_current_batch(net)%10 == 0){
             image tr = float_to_image(net->w/div, net->h/div, 3, train.y.vals[net->batch*(net->subdivisions-1)]);
             save_image_16(tr, "truth");
-            image im = float_to_image(net->w, net->h, net->c, train.X.vals[net->batch*(net->subdivisions-1)]);
+            image im = float_to_image(net->w, net->h, 3, train.X.vals[net->batch*(net->subdivisions-1)]);
             save_image(im, "input");
             save_image_16(pred, "pred");
             image dist = image_distance( tr, pred);
@@ -149,7 +149,7 @@ void train_segmenter(char *datacfg, char *cfgfile, char *weightfile, int *gpus, 
             image tr = float_to_image(net->w/div, net->h/div, 3, train.y.vals[net->batch*(net->subdivisions-1)]);
             sprintf( file_name, "%d_truth", get_current_batch(net)/100);
             save_image_16(tr, file_name);
-            image im = float_to_image(net->w, net->h, net->c, train.X.vals[net->batch*(net->subdivisions-1)]);
+            image im = float_to_image(net->w, net->h, 3, train.X.vals[net->batch*(net->subdivisions-1)]);
             sprintf( file_name, "%d_input", get_current_batch(net)/100);
             save_image(im, file_name);
             sprintf( file_name, "%d", get_current_batch(net)/100);

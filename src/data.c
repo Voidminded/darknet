@@ -738,9 +738,9 @@ image get_segmentation_image2(char *path, int w, int h, int classes)
 image get_seg_image(char *path, int w, int h)
 {
     char labelpath[4096];
-    //find_replace(path, ".png", "_gt.png", labelpath);
     //find_replace(path, "img", "gt", labelpath);
     find_replace(path, "image", "label", labelpath);
+    find_replace(labelpath, ".png", "_gt.png", labelpath);
     find_replace(labelpath, "JPEGImages", "mask", labelpath);
     find_replace(labelpath, ".jpeg", ".tiff", labelpath);
     find_replace(labelpath, ".JPG", ".tiff", labelpath);
@@ -1300,7 +1300,7 @@ void *load_thread(void *ptr)
     } else if (a.type == INSTANCE_DATA){
         *a.d = load_data_mask(a.n, a.paths, a.m, a.w, a.h, a.classes, a.num_boxes, a.coords, a.min, a.max, a.angle, a.aspect, a.hue, a.saturation, a.exposure);
     } else if (a.type == SEGMENTATION_DATA){
-        *a.d = load_data_seg_full(a.n, a.paths, a.m, a.w, a.h, a.classes, a.min, a.max, a.angle, a.aspect, a.hue, a.saturation, a.exposure, a.scale);
+        *a.d = load_data_seg_conf_coord(a.n, a.paths, a.m, a.w, a.h, a.classes, a.min, a.max, a.angle, a.aspect, a.hue, a.saturation, a.exposure, a.scale);
     } else if (a.type == REGION_DATA){
         *a.d = load_data_region(a.n, a.paths, a.m, a.w, a.h, a.num_boxes, a.classes, a.jitter, a.hue, a.saturation, a.exposure);
     } else if (a.type == DETECTION_DATA){
