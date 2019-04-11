@@ -955,19 +955,32 @@ image crop_image_coordconv(image im, int dx, int dy, int w, int h)
     }
     for(j = 0; j < h; ++j){
         for(i = 0; i < w; ++i){
-            //int r = j + dy;
-            //int c = i + dx;
-            //r = constrain_int(r, 0, im.h-1);
-            //c = constrain_int(c, 0, im.w-1);
-            //set_pixel(cropped, i, j, 3, (float)c/im.w);
-            //set_pixel(cropped, i, j, 4, (float)r/im.h);
-            set_pixel(cropped, i, j, 3, (float)i/w);
-            set_pixel(cropped, i, j, 4, (float)j/h);
+            int r = j + dy;
+            int c = i + dx;
+            r = constrain_int(r, 0, im.h-1);
+            c = constrain_int(c, 0, im.w-1);
+            set_pixel(cropped, i, j, 3, (float)c/im.w);
+            set_pixel(cropped, i, j, 4, (float)r/im.h);
+            //set_pixel(cropped, i, j, 3, (float)i/w);
+            //set_pixel(cropped, i, j, 4, (float)j/h);
         }
     }
     return cropped;
 }
 
+image add_coordconv(image im)
+{
+    image coorded = make_image(im.w, im.h, im.c+2);
+    memcpy( coorded.data, im.data, im.h*im.w*im.c*sizeof(float));
+    int i, j;
+    for(j = 0; j < im.h; ++j){
+        for(i = 0; i < im.w; ++i){
+            set_pixel(coorded, i, j, 3, (float)i/im.w);
+            set_pixel(coorded, i, j, 4, (float)j/im.h);
+        }
+    }
+    return coorded;
+}
 // Added by Sep for cropping segmentation GTs:
 //
 image crop_seg_gt(image im, int dx, int dy, int w, int h, int* valid)

@@ -740,7 +740,7 @@ image get_seg_image(char *path, int w, int h)
     char labelpath[4096];
     //find_replace(path, "img", "gt", labelpath);
     find_replace(path, "image", "label", labelpath);
-    find_replace(labelpath, ".png", "_gt.png", labelpath);
+    //find_replace(labelpath, ".png", "_gt.png", labelpath);
     find_replace(labelpath, "JPEGImages", "mask", labelpath);
     find_replace(labelpath, ".jpeg", ".tiff", labelpath);
     find_replace(labelpath, ".JPG", ".tiff", labelpath);
@@ -964,6 +964,38 @@ data load_data_seg_conf_coord(int n, char **paths, int m, int w, int h, int clas
           d.X.vals[i] = sized.data;
           d.y.vals[i] = sized_m.data;
         }
+
+        free_image(orig);
+        free_image(mask);
+    }
+    free(random_paths);
+    return d;
+}
+
+data load_data_seg_full_coord(int n, char **paths, int m, int w, int h, int classes, int min, int max, float angle, float aspect, float hue, float saturation, float exposure, int div)
+{
+    char **random_paths = get_random_paths(paths, n, m);
+    int i;
+    data d = {0};
+    d.shallow = 0;
+
+    d.X.rows = n;
+    d.X.vals = calloc(d.X.rows, sizeof(float*));
+    d.X.cols = h*w*5;
+
+
+    d.y.rows = n;
+    d.y.cols = h*w*4;
+    d.y.vals = calloc(d.X.rows, sizeof(float*));
+
+    for(i = 0; i < n; ++i){
+        image orig = load_image_color(random_paths[i], 0, 0);
+        random_distort_image(orig, hue, saturation, exposure);
+        image coorded = add_coordconv( orig);
+        image mask = get_seg_image(random_paths[i], orig.w, orig.h);
+        image truth = seg_gt_fill_conf( mask);
+        d.X.vals[i] = coorded.data;
+        d.y.vals[i] = truth.data;
 
         free_image(orig);
         free_image(mask);
@@ -1300,7 +1332,7 @@ void *load_thread(void *ptr)
     } else if (a.type == INSTANCE_DATA){
         *a.d = load_data_mask(a.n, a.paths, a.m, a.w, a.h, a.classes, a.num_boxes, a.coords, a.min, a.max, a.angle, a.aspect, a.hue, a.saturation, a.exposure);
     } else if (a.type == SEGMENTATION_DATA){
-        *a.d = load_data_seg_conf_coord(a.n, a.paths, a.m, a.w, a.h, a.classes, a.min, a.max, a.angle, a.aspect, a.hue, a.saturation, a.exposure, a.scale);
+        *a.d = load_data_seg_full(a.n, a.paths, a.m, a.w, a.h, a.classes, a.min, a.max, a.angle, a.aspect, a.hue, a.saturation, a.exposure, a.scale);
     } else if (a.type == REGION_DATA){
         *a.d = load_data_region(a.n, a.paths, a.m, a.w, a.h, a.num_boxes, a.classes, a.jitter, a.hue, a.saturation, a.exposure);
     } else if (a.type == DETECTION_DATA){

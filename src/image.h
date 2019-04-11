@@ -28,6 +28,7 @@ void scale_image(image m, float s);
 image rotate_crop_image(image im, float rad, float s, int w, int h, float dx, float dy, float aspect);
 image random_crop_image(image im, int w, int h);
 image crop_image_coordconv(image im, int dx, int dy, int w, int h);
+image add_coordconv(image im);
 image crop_seg_gt(image im, int dx, int dy, int w, int h, int* valid);
 image crop_seg_gt_conf(image im, int dx, int dy, int w, int h, int* valid);
 image seg_gt_fill_conf(image im);
