@@ -882,6 +882,81 @@ data load_data_seg_conf(int n, char **paths, int m, int w, int h, int classes, i
     return d;
 }
 
+data load_data_seg_seq(int n, int m, int w, int h, int classes, int min, int max, float angle, float aspect, float hue, float saturation, float exposure, int div)
+{
+    int cams = 4;
+    int seqs = 1200;
+    int frames = 51;
+    int i,j;
+    data d = {0};
+    d.shallow = 0;
+    image orig;
+    image sized;
+
+    d.X.rows = n;
+    d.X.vals = calloc(d.X.rows, sizeof(float*));
+    d.X.cols = h*w*9;
+
+
+    d.y.rows = n;
+    d.y.cols = h*w*12;
+    d.y.vals = calloc(d.X.rows, sizeof(float*));
+
+    int valid;
+    for(i = 0; i < n; ++i)
+    {
+        valid = 0;
+        image input = make_image(w, h, 9);
+        while(!valid)
+        {
+            int c = rand()%cams;
+            int s = rand()%seqs;
+            int f = rand()%frames + 9;
+            int dx = rand_int(0, 1920 - w);
+            int dy = rand_int(0, 1080 - h);
+            float dhue = rand_uniform(-hue, hue);
+            float dsat = rand_scale(saturation);
+            float dexp = rand_scale(exposure);
+            for( j = 0; j < 9; j++){
+                char path[256];
+                sprintf( path, "/local_home/dataset/birdies/birdgen/output/image/sequence_%d_cam_%d_frame_%d.png", s, c, f-j);
+                orig = load_image_color( path, 0, 0);
+
+                sized = crop_image(orig, dx, dy, w, h);
+
+                distort_image(sized, dhue, dsat, dexp);
+                if( j == 0){
+                    image sized_m = crop_seg_gt_8dof( dx, dy, w, h, &valid, s, c, f-j);
+                    //image truth_debug = collapse_birds_layers( sized_m, 0.5);
+                    //save_image_16( truth_debug, "truth_debugged");
+                    //free_image( truth_debug);
+                    if( valid)
+                        d.y.vals[i] = sized_m.data;
+                    else
+                    {
+                        free_image( sized_m);
+                        free_image(sized);
+                        free_image(orig);
+                        break;
+                    }
+                }
+                //show_image( sized, "img", 1);
+                memcpy( input.data + j*h*w, sized.data, h*w*sizeof( float));
+                free_image(sized);
+                free_image(orig);
+            }
+            //printf( "/local_home/dataset/birdies/birdgen/output/image/sequence_%d_cam_%d_frame_%d.png\n", s, c, f);
+        }
+        d.X.vals[i] = input.data;
+
+        //image input_debug = collapse_image_layers( input, 1);
+        //save_image( input_debug, "input");
+        //free_image( input_debug);
+        //cvWaitKey(0);
+    }
+    return d;
+}
+
 data load_data_seg_full(int n, char **paths, int m, int w, int h, int classes, int min, int max, float angle, float aspect, float hue, float saturation, float exposure, int div)
 {
     char **random_paths = get_random_paths(paths, n, m);
@@ -1331,8 +1406,10 @@ void *load_thread(void *ptr)
         *a.d = load_data_iseg(a.n, a.paths, a.m, a.w, a.h, a.classes, a.num_boxes, a.scale, a.min, a.max, a.angle, a.aspect, a.hue, a.saturation, a.exposure);
     } else if (a.type == INSTANCE_DATA){
         *a.d = load_data_mask(a.n, a.paths, a.m, a.w, a.h, a.classes, a.num_boxes, a.coords, a.min, a.max, a.angle, a.aspect, a.hue, a.saturation, a.exposure);
+//    } else if (a.type == SEGMENTATION_DATA){
+//        *a.d = load_data_seg_full(a.n, a.paths, a.m, a.w, a.h, a.classes, a.min, a.max, a.angle, a.aspect, a.hue, a.saturation, a.exposure, a.scale);
     } else if (a.type == SEGMENTATION_DATA){
-        *a.d = load_data_seg_full(a.n, a.paths, a.m, a.w, a.h, a.classes, a.min, a.max, a.angle, a.aspect, a.hue, a.saturation, a.exposure, a.scale);
+        *a.d = load_data_seg_seq(a.n, a.m, a.w, a.h, a.classes, a.min, a.max, a.angle, a.aspect, a.hue, a.saturation, a.exposure, a.scale);
     } else if (a.type == REGION_DATA){
         *a.d = load_data_region(a.n, a.paths, a.m, a.w, a.h, a.num_boxes, a.classes, a.jitter, a.hue, a.saturation, a.exposure);
     } else if (a.type == DETECTION_DATA){

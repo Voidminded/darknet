@@ -110,17 +110,6 @@ void train_segmenter(char *datacfg, char *cfgfile, char *weightfile, int *gpus, 
 #else
         loss = train_network(net, train);
 #endif
-        if(display){
-            image tr = float_to_image(net->w/div, net->h/div, 3, train.y.vals[net->batch*(net->subdivisions-1)]);
-            image im = float_to_image(net->w, net->h, net->c, train.X.vals[net->batch*(net->subdivisions-1)]);
-            //image mask = mask_to_rgb(tr);
-            //image prmask = mask_to_rgb(pred);
-            show_image(im, "input", 3);
-            show_image(pred, "pred", 3);
-            show_image(tr, "truth", 3);
-            //free_image(tr);
-            free_image(pred);
-        }
         if(avg_loss == -1) avg_loss = loss;
         avg_loss = avg_loss*.9 + loss*.1;
         printf("%ld, %.3f: %f, %f avg, %f rate, %lf seconds, %ld images\n", get_current_batch(net), (float)(*net->seen)/N, loss, avg_loss, get_current_rate(net), what_time_is_it_now()-time, *net->seen);
@@ -133,33 +122,82 @@ void train_segmenter(char *datacfg, char *cfgfile, char *weightfile, int *gpus, 
             save_weights(net, buff);
         }
         if( get_current_batch(net)%10 == 0){
-            image tr = float_to_image(net->w/div, net->h/div, 3, train.y.vals[net->batch*(net->subdivisions-1)]);
-            save_image_16(tr, "truth");
-            image im = float_to_image(net->w, net->h, 3, train.X.vals[net->batch*(net->subdivisions-1)]);
+            image trth = float_to_image(net->w/div, net->h/div, 12, train.y.vals[net->batch*(net->subdivisions-1)]);
+            image tr = collapse_birds_layers( trth, 1);
+            save_image_16( tr, "truth");
+            image im = collapse_image_layers( float_to_image(net->w, net->h, 9, train.X.vals[net->batch*(net->subdivisions-1)]), 1);
             save_image(im, "input");
-            save_image_16(pred, "pred");
-            image dist = image_distance( tr, pred);
+            free_image( im);
+            image pr = collapse_birds_layers(pred, 1);
+            save_image_16( pr, "pred");
+            image dist = image_distance( tr, pr);
             save_image_16(dist, "dist");
-            image diff = image_diff( tr, pred);
+            image diff = image_diff( tr, pr);
             save_image_16(diff, "diff");
+            //------------------------
+            //for debug:
+            image spc = make_image( trth.w*2+3, trth.h*12+33, 3);
+            fill_image( spc, 1.);
+            image tmp = make_empty_image(0,0,0);
+            int ind_spc;
+            for( ind_spc = 0; ind_spc <12; ind_spc++)
+            {
+                image t = get_image_layer( trth, ind_spc);
+                tmp = bird_to_rgb( t, ind_spc);
+                free_image( t);
+                place_image( tmp, trth.w, trth.h,  0, ind_spc*(trth.h+3), spc);
+                free_image( tmp);
+            }
+            image msk = get_image_layer( pred, 0);
+            tmp = bird_to_rgb( msk, 0);
+            place_image( tmp, pred.w, pred.h,  pred.w+3, 0, spc);
+            free_image( tmp);
+            for( ind_spc = 1; ind_spc <12; ind_spc++)
+            {
+                image t = get_image_layer( pred, ind_spc);
+                mul_cpu( pred.w*pred.h, msk.data, 1, t.data, 1);
+                tmp = bird_to_rgb( t, ind_spc);
+                free_image( t);
+                place_image( tmp, pred.w, pred.h,  pred.w+3, ind_spc*(pred.h+3), spc);
+                free_image( tmp);
+            }
+            char f[128];
+            sprintf( f, "./spc/%d", get_current_batch(net)/10);
+            save_image(spc, f);
+
+            //-------------------------------
+
+
+            free_image( tr);
+            free_image( pr);
+            free_image( diff);
+            free_image( dist);
+            free_image( spc);
+            free_image( msk);
         }
         if( get_current_batch(net)%100 == 0){
             char buff[256];
             char file_name[21];
-            image tr = float_to_image(net->w/div, net->h/div, 3, train.y.vals[net->batch*(net->subdivisions-1)]);
+            image tr = collapse_birds_layers( float_to_image(net->w/div, net->h/div, 12, train.y.vals[net->batch*(net->subdivisions-1)]), 1);
             sprintf( file_name, "%d_truth", get_current_batch(net)/100);
             save_image_16(tr, file_name);
-            image im = float_to_image(net->w, net->h, 3, train.X.vals[net->batch*(net->subdivisions-1)]);
+            image im = collapse_image_layers( float_to_image(net->w, net->h, 9, train.X.vals[net->batch*(net->subdivisions-1)]), 1);
             sprintf( file_name, "%d_input", get_current_batch(net)/100);
             save_image(im, file_name);
+            free_image( im);
             sprintf( file_name, "%d", get_current_batch(net)/100);
-            save_image_16(pred, file_name);
-            image dist = image_distance( tr, pred);
+            image pr = collapse_birds_layers(pred, 1);
+            save_image_16(pr, file_name);
+            image dist = image_distance( tr, pr);
             sprintf( file_name, "%d_dist", get_current_batch(net)/100);
             save_image_16(dist, file_name);
-            image diff = image_diff( tr, pred);
+            image diff = image_diff( tr, pr);
             sprintf( file_name, "%d_diff", get_current_batch(net)/100);
             save_image_16(diff, file_name);
+            free_image( tr);
+            free_image( pr);
+            free_image( diff);
+            free_image( dist);
             sprintf(buff, "%s/%s.backup",backup_directory,base);
             save_weights(net, buff);
         }

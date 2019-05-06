@@ -31,6 +31,7 @@ image crop_image_coordconv(image im, int dx, int dy, int w, int h);
 image add_coordconv(image im);
 image crop_seg_gt(image im, int dx, int dy, int w, int h, int* valid);
 image crop_seg_gt_conf(image im, int dx, int dy, int w, int h, int* valid);
+image crop_seg_gt_8dof( int dx, int dy, int w, int h, int* valid, int seq, int cam, int frame);
 image seg_gt_fill_conf(image im);
 image random_augment_image(image im, float angle, float aspect, int low, int high, int w, int h);
 augment_args random_augment_args(image im, float angle, float aspect, int low, int high, int w, int h);
@@ -50,6 +51,8 @@ void rgb_to_yuv(image im);
 
 
 image collapse_image_layers(image source, int border);
+image collapse_birds_layers(image source, int border);
+image bird_to_rgb(image mask, int channel);
 image collapse_images_horz(image *ims, int n);
 image collapse_images_vert(image *ims, int n);
 

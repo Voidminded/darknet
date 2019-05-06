@@ -463,6 +463,66 @@ image collapse_image_layers(image source, int border)
     return dest;
 }
 
+image collapse_birds_layers(image source, int border)
+{
+    int h = source.h, x, y;
+    h = (h+border)*source.c - border;
+    image dest = make_image(source.w, h, 3);
+    int i;
+    for(i = 0; i < source.c; ++i){
+        image layer = get_image_layer(source, i);
+        int h_offset = i*(source.h+border);
+        if( i < 4)
+        {
+            for(y = 0; y < source.h; ++y){
+                for(x = 0; x < source.w; ++x){
+                    float val = get_pixel(source, x,y,i);
+                    set_pixel(dest, x, h_offset+y, 0, val);
+                    set_pixel(dest, x, h_offset+y, 1, val);
+                    set_pixel(dest, x, h_offset+y, 2, val);
+                }
+            }
+        }
+        else
+        {
+            for(y = 0; y < source.h; ++y){
+                for(x = 0; x < source.w; ++x){
+                    float val = get_pixel(source, x,y,i);
+                    if( val > 0)
+                        set_pixel(dest, x, h_offset+y, 1, val);
+                    else
+                        set_pixel(dest, x, h_offset+y, 0, -val);
+                }
+            }
+        }
+        free_image(layer);
+    }
+    return dest;
+}
+
+image bird_to_rgb(image mask, int channel)
+{
+    image im = make_image(mask.w, mask.h, 3);
+    int i, j;
+    for(i = 0; i < im.w*im.h; ++i){
+        if( channel < 4)
+        {
+            im.data[i + 0*im.w*im.h] = mask.data[i];
+            im.data[i + 1*im.w*im.h] = mask.data[i];
+            im.data[i + 2*im.w*im.h] = mask.data[i];
+        }
+        else
+        {
+            float val = mask.data[i];
+            if( val > 0)
+                im.data[i + im.w*im.h] = val;
+            else
+                im.data[i] = -val;
+        }
+    }
+    return im;
+}
+
 void constrain_image(image im)
 {
     int i;
@@ -653,7 +713,8 @@ image load_image_cv(char *filename, int channels)
     }
     image out = ipl_to_image(src);
     cvReleaseImage(&src);
-    rgbgr_image(out);
+    if( channels == 3)
+        rgbgr_image(out);
     return out;
 }
 
@@ -1039,6 +1100,132 @@ image crop_seg_gt_conf(image im, int dx, int dy, int w, int h, int* valid)
         }
     }
     return cropped;
+}
+
+image crop_seg_gt_8dof( int dx, int dy, int w, int h, int* valid, int seq, int cam, int frame)
+{
+    int i, j;
+    image gt = make_image(w, h, 12);
+    char path[256];
+
+    // X,Y, birdness, spicies and Wing beaats phase
+    sprintf( path, "/local_home/dataset/birdies/birdgen/output/label/sp/sequence_%d_cam_%d_frame_%d_sp.png", seq, cam, frame);
+    image lb = load_image_16(path, 1);
+    for(j = 0; j < h; ++j){
+        for(i = 0; i < w; ++i){
+            int r = j + dy;
+            int c = i + dx;
+            r = constrain_int(r, 0, lb.h-1);
+            c = constrain_int(c, 0, lb.w-1);
+            if( get_pixel(lb, c, r, 0) > 1e-9)
+            {
+                *valid = 1;
+                break;
+            }
+        }
+        if( *valid > 0.3)
+            break;
+    }
+    if( *valid < 1e-3)
+    {
+        free_image( lb);
+        return gt;
+    }
+    sprintf( path, "/local_home/dataset/birdies/birdgen/output/label/px/sequence_%d_cam_%d_frame_%d_px.png", seq, cam, frame);
+    image lbX = load_image_16(path, 1);
+    sprintf( path, "/local_home/dataset/birdies/birdgen/output/label/py/sequence_%d_cam_%d_frame_%d_py.png", seq, cam, frame);
+    image lbY = load_image_16(path, 1);
+    sprintf( path, "/local_home/dataset/birdies/birdgen/output/label/fp/sequence_%d_cam_%d_frame_%d_fp.png", seq, cam, frame);
+    image lbWB = load_image_16(path, 1);
+    for(j = 0; j < h; ++j){
+        for(i = 0; i < w; ++i){
+            int r = j + dy;
+            int c = i + dx;
+            float valX = 0, valY = 0, val = 0, alpha = 0, jackdaw = 0, rook = 0;
+            r = constrain_int(r, 0, lb.h-1);
+            c = constrain_int(c, 0, lb.w-1);
+            val = get_pixel(lb, c, r, 0);
+            if( val > 1e-9)
+            {
+                alpha = 1.0;
+                if( val > 0.9)
+                    jackdaw = 1.;
+                else
+                    rook = 1.;
+                set_pixel(gt, i, j, 2, rook);
+                set_pixel(gt, i, j, 1, jackdaw);
+                set_pixel(gt, i, j, 0, alpha);
+                valX = get_pixel(lbX, c, r, 0)*lbX.w;
+                valY = get_pixel(lbY, c, r, 0)*lbY.h;
+                if( valX > 1e-9 || valY > 1e-9)
+                {
+                    float dist = sqrt( pow( c-valX,2) + pow( r-valY, 2));
+                    set_pixel(gt, i, j, 4, (valX-c)/dist);
+                    set_pixel(gt, i, j, 5, (valY-r)/dist);
+                }
+                float wb = TWO_PI*get_pixel(lbWB, c, r, 0);
+                set_pixel(gt, i, j, 10, sin(wb));
+                set_pixel(gt, i, j, 11, cos(wb));
+            }
+        }
+    }
+    free_image( lbX);
+    free_image( lbY);
+    free_image( lb);
+    free_image( lbWB);
+
+    // depth
+    sprintf( path, "/local_home/dataset/birdies/birdgen/output/label/pz/sequence_%d_cam_%d_frame_%d_dp.png", seq, cam, frame);
+    lb = load_image_16(path, 1);
+    image sized = crop_image( lb, dx, dy, w, h);
+    memcpy( gt.data + 3*w*h, sized.data, w*h*sizeof( float));
+    free_image( lb);
+    free_image( sized);
+
+    image mask = get_image_layer( gt, 0);
+
+    // Qx
+    sprintf( path, "/local_home/dataset/birdies/birdgen/output/label/qx/sequence_%d_cam_%d_frame_%d_qx.png", seq, cam, frame);
+    lb = load_image_16_symmetric(path, 1);
+    sized = crop_image( lb, dx, dy, w, h);
+    image masked = mask_images( sized, mask);
+    memcpy( gt.data + 6*w*h, masked.data, w*h*sizeof( float));
+    free_image( lb);
+    free_image( sized);
+    free_image( masked);
+
+    // Qy
+    sprintf( path, "/local_home/dataset/birdies/birdgen/output/label/qy/sequence_%d_cam_%d_frame_%d_qy.png", seq, cam, frame);
+    lb = load_image_16_symmetric(path, 1);
+    sized = crop_image( lb, dx, dy, w, h);
+    masked = mask_images( sized, mask);
+    memcpy( gt.data + 7*w*h, masked.data, w*h*sizeof( float));
+    free_image( lb);
+    free_image( sized);
+    free_image( masked);
+
+    // Qz
+    sprintf( path, "/local_home/dataset/birdies/birdgen/output/label/qz/sequence_%d_cam_%d_frame_%d_qz.png", seq, cam, frame);
+    lb = load_image_16_symmetric(path, 1);
+    sized = crop_image( lb, dx, dy, w, h);
+    masked = mask_images( sized, mask);
+    memcpy( gt.data + 8*w*h, masked.data, w*h*sizeof( float));
+    free_image( lb);
+    free_image( sized);
+    free_image( masked);
+
+    // Qw
+    sprintf( path, "/local_home/dataset/birdies/birdgen/output/label/qw/sequence_%d_cam_%d_frame_%d_qw.png", seq, cam, frame);
+    lb = load_image_16_symmetric(path, 1);
+    sized = crop_image( lb, dx, dy, w, h);
+    masked = mask_images( sized, mask);
+    memcpy( gt.data + 9*w*h, masked.data, w*h*sizeof( float));
+    free_image( lb);
+    free_image( sized);
+    free_image( mask);
+    free_image( masked);
+
+    return gt;
 }
 
 image seg_gt_fill_conf(image im)
@@ -1436,6 +1623,22 @@ image blend_image(image fore, image back, float alpha)
     return blend;
 }
 
+image mask_images(image fore, image mask)
+{
+    assert(fore.w == mask.w && fore.h == mask.h && fore.c == mask.c);
+    image masked = make_image(fore.w, fore.h, fore.c);
+    int i, j, k;
+    for(k = 0; k < fore.c; ++k){
+        for(j = 0; j < fore.h; ++j){
+            for(i = 0; i < fore.w; ++i){
+                float val = get_pixel(fore, i, j, k) * get_pixel(mask, i, j, k);
+                set_pixel(masked, i, j, k, val);
+            }
+        }
+    }
+    return masked;
+}
+
 void scale_image_channel(image im, int c, float v)
 {
     int i, j;
@@ -1675,6 +1878,30 @@ image load_image_16(char *filename, int channels)
                 int dst_index = i + w*j + w*h*k;
                 int src_index = k + c*i + c*w*j;
                 im.data[dst_index] = (float)data[src_index]/65535.;
+            }
+        }
+    }
+    free(data);
+    return im;
+}
+
+image load_image_16_symmetric(char *filename, int channels)
+{
+    int w, h, c;
+    unsigned short *data = stbi_load_16(filename, &w, &h, &c, channels);
+    if (!data) {
+        fprintf(stderr, "Cannot load image \"%s\"\nSTB Reason: %s\n", filename, stbi_failure_reason());
+        exit(0);
+    }
+    if(channels) c = channels;
+    int i,j,k;
+    image im = make_image(w, h, c);
+    for(k = 0; k < c; ++k){
+        for(j = 0; j < h; ++j){
+            for(i = 0; i < w; ++i){
+                int dst_index = i + w*j + w*h*k;
+                int src_index = k + c*i + c*w*j;
+                im.data[dst_index] = (2.*(float)data[src_index]/65535.-1.0);
             }
         }
     }

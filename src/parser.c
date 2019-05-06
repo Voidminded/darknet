@@ -35,6 +35,7 @@
 #include "shortcut_layer.h"
 #include "softmax_layer.h"
 #include "lstm_layer.h"
+#include "birdies_layer.h"
 #include "utils.h"
 
 typedef struct{
@@ -83,6 +84,7 @@ LAYER_TYPE string_to_layer_type(char * type)
             || strcmp(type, "[softmax]")==0) return SOFTMAX;
     if (strcmp(type, "[route]")==0) return ROUTE;
     if (strcmp(type, "[upsample]")==0) return UPSAMPLE;
+    if (strcmp(type, "[bird]")==0) return BIRDIES;
     return BLANK;
 }
 
@@ -346,6 +348,13 @@ layer parse_iseg(list *options, size_params params)
     int classes = option_find_int(options, "classes", 20);
     int ids = option_find_int(options, "ids", 32);
     layer l = make_iseg_layer(params.batch, params.w, params.h, classes, ids);
+    assert(l.outputs == params.inputs);
+    return l;
+}
+
+layer parse_birdies(list *options, size_params params)
+{
+    layer l = make_birdies_layer(params.batch, params.w, params.h);
     assert(l.outputs == params.inputs);
     return l;
 }
@@ -805,6 +814,8 @@ network *parse_network_cfg(char *filename)
             l = parse_yolo(options, params);
         }else if(lt == ISEG){
             l = parse_iseg(options, params);
+        }else if(lt == BIRDIES){
+            l = parse_birdies(options, params);
         }else if(lt == DETECTION){
             l = parse_detection(options, params);
         }else if(lt == SOFTMAX){

@@ -698,6 +698,8 @@ void set_batch_network(network *net, int b);
 void set_temp_network(network *net, float t);
 image load_image(char *filename, int w, int h, int c);
 image load_image_16(char *filename, int channels);
+image load_image_16_symmetric(char *filename, int channels);
+image mask_images(image fore, image mask);
 image load_image_color(char *filename, int w, int h);
 image make_image(int w, int h, int c);
 image resize_image(image im, int w, int h);
