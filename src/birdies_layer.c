@@ -61,6 +61,8 @@ void forward_birdies_layer(const layer l, network net)
     activate_array(l.output, l.outputs*l.batch, l.activation);
 #endif
 
+    if(!net.truth)
+      return;
     if( l.activation == LOGISTIC)
     {
         l2_cpu( l.outputs*l.batch, l.output, net.truth, l.delta, l.loss);
