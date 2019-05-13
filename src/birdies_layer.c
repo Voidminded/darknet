@@ -60,18 +60,22 @@ void forward_birdies_layer(const layer l, network net)
     for (b = 0; b < l.batch; ++b){
         for(i = 0; i < l.c; ++i){
             int index = b*l.outputs + i*l.w*l.h;
-            if( i<4) // for Birdness, Spicies, and Depth
+            if( i<3) // for Birdness and Spicies
                 activate_array(l.output + index, l.w*l.h, LOGISTIC);
+            else if( i == 3) // for depth
+                acivate_array(l.output + index, l.w*l.h, RELU);
             else
-                activate_array(l.output + index, l.w*l.h, TANH);
+                activate_array(l.output + index, l.w*l.h, LINEAR);
         }
     }
 #endif
 
+    if(!net.truth)
+      return;
     float *mse = calloc( l.c, sizeof( float));
     for (b = 0; b < l.batch; ++b){
         // Birdness thingy
-        l1_cpu( l.w*l.h, l.output + b*l.outputs, net.truth + b*l.outputs, l.delta + b*l.outputs, l.loss + b*l.outputs);
+        l2_cpu( l.w*l.h, l.output + b*l.outputs, net.truth + b*l.outputs, l.delta + b*l.outputs, l.loss + b*l.outputs);
         float sum = 0;
         int count;
         mse[0] += sum_array(l.loss + b*l.outputs, l.w*l.h)/(l.w*l.h);
@@ -85,9 +89,9 @@ void forward_birdies_layer(const layer l, network net)
                 {
                     int index = b*l.outputs + i*l.w*l.h + k;
                     if( i < 3) // For scpicies
-                       l2_cpu( 1, l.output + index, net.truth + index, l.delta + index, l.loss + index);
+                        l2_cpu( 1, l.output + index, net.truth + index, l.delta + index, l.loss + index);
                     else if( i < 6)
-                        smooth_l1_cpu( 1, l.output + index, net.truth + index, l.delta + index, l.loss + index);
+                        l2_cpu( 1, l.output + index, net.truth + index, l.delta + index, l.loss + index);
                     else
                         l2_cpu( 1, l.output + index, net.truth + index, l.delta + index, l.loss + index);
                        // l.delta[index] = net.truth[ index] - l.output[index];
@@ -119,10 +123,16 @@ void forward_birdies_layer_gpu(const layer l, network net)
     for (b = 0; b < l.batch; ++b){
         for(i = 0; i < l.c; ++i){
             int index = b*l.outputs + i*l.w*l.h;
-            if( i<4) // for Birdness, Spicies, and Depth
+            if( i<3) // for Birdness and Spicies
                 activate_array_gpu(l.output_gpu + index, l.w*l.h, LOGISTIC);
+            else if( i == 3)
+                activate_array_gpu(l.output_gpu + index, l.w*l.h, RELU);
             else
-                activate_array_gpu(l.output_gpu + index, l.w*l.h, TANH);
+                activate_array_gpu(l.output_gpu + index, l.w*l.h, LINEAR);
+///            if( i<4) // for Birdness and Spicies
+///                activate_array_gpu(l.output_gpu + index, l.w*l.h, LOGISTIC);
+///            else
+///                activate_array_gpu(l.output_gpu + index, l.w*l.h, TANH);
         }
     }
 

@@ -279,7 +279,7 @@ void logistic_x_ent_cpu(int n, float *pred, float *truth, float *delta, float *e
     for(i = 0; i < n; ++i){
         float t = truth[i];
         float p = pred[i];
-        error[i] = -t*log(p) - (1-t)*log(1-p);
+        error[i] = t > 0 ? -log(p) : -log(1-p);
         delta[i] = t-p;
     }
 }
