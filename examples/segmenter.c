@@ -122,10 +122,21 @@ void train_segmenter(char *datacfg, char *cfgfile, char *weightfile, int *gpus, 
             save_weights(net, buff);
         }
         if( get_current_batch(net)%10 == 0){
-            image trth = float_to_image(net->w/div, net->h/div, 3, train.y.vals[net->batch*(net->subdivisions-1)]);
+            image trth = float_to_image(net->w/div, net->h/div, 12, train.y.vals[net->batch*(net->subdivisions-1)]);
+           // image tr = collapse_birds_layers( trth, 1);
+           // save_image_16( tr, "truth");
+           // image im = collapse_image_layers( float_to_image(net->w, net->h, 9, train.X.vals[net->batch*(net->subdivisions-1)]), 1);
+           // save_image(im, "input");
+           // free_image( im);
+           // image pr = collapse_birds_layers(pred, 1);
+           // save_image_16( pr, "pred");
+           // image dist = image_distance( tr, pr);
+           // save_image_16(dist, "dist");
+           // image diff = image_diff( tr, pr);
+           // save_image_16(diff, "diff");
             //------------------------
             //for debug:
-            image spc = make_image( trth.w*2+3, trth.h*3+6, 1);
+            image spc = make_image( trth.w*3+6, trth.h*12+33, 3);
             fill_image( spc, 1.);
             image tmp = make_empty_image(0,0,0);
             int ind_spc;
@@ -135,36 +146,23 @@ void train_segmenter(char *datacfg, char *cfgfile, char *weightfile, int *gpus, 
                 place_image( tmp, trth.w, trth.h,  0, ind_spc*(trth.h+3), spc);
                 free_image( tmp);
             }
-            int i_spc, j_spc, px_spc;
-            float val_spc;
-            for( i_spc = 0; i_spc < pred.w; ++i_spc)
-                for( j_spc = 0; j_spc < pred.h; ++j_spc)
-                {
-                    val_spc = get_pixel( pred,i_spc, j_spc, 0);
-                    ind_spc = 0;
-                    if( get_pixel( pred,i_spc, j_spc, 1) > val_spc)
-                    {
-                        val_spc =  get_pixel( pred,i_spc, j_spc, 1);
-                        ind_spc = 1;
-                    }
-                    if( get_pixel( pred,i_spc, j_spc, 2) > val_spc)
-                    {
-                        val_spc =  get_pixel( pred,i_spc, j_spc, 2);
-                        ind_spc = 2;
-                    }
-                    set_pixel( spc, pred.w+3+i_spc, 0*(pred.h+3)+j_spc, 0, 0.);
-                    set_pixel( spc, pred.w+3+i_spc, 1*(pred.h+3)+j_spc, 0, 0.);
-                    set_pixel( spc, pred.w+3+i_spc, 2*(pred.h+3)+j_spc, 0, 0.);
-                    set_pixel( spc, pred.w+3+i_spc, ind_spc*(pred.h+3)+j_spc, 0, 1);
-
-                    //for( ind_spc = 0; ind_spc <3; ind_spc++)
-                    //{
-                    //    tmp = get_image_layer( pred, ind_spc);
-                    //    if( 
-                    //    place_image( tmp, pred.w, pred.h,  pred.w+3, ind_spc*(pred.h+3), spc);
-                    //    free_image( tmp);
-                    //}
-                }
+            image msk = get_image_layer( pred, 0);
+            tmp = bird_to_rgb( msk, 0);
+            place_image( tmp, pred.w, pred.h,  pred.w+3, 0, spc);
+            place_image( tmp, pred.w, pred.h,  2*(pred.w+3), 0, spc);
+            free_image( tmp);
+            for( ind_spc = 1; ind_spc <12; ind_spc++)
+            {
+                image t = get_image_layer( pred, ind_spc);
+                tmp = bird_to_rgb( t, ind_spc);
+                place_image( tmp, pred.w, pred.h, 2*(pred.w+3), ind_spc*(pred.h+3), spc);
+                free_image( tmp);
+                mul_cpu( pred.w*pred.h, msk.data, 1, t.data, 1);
+                tmp = bird_to_rgb( t, ind_spc);
+                place_image( tmp, pred.w, pred.h,  pred.w+3, ind_spc*(pred.h+3), spc);
+                free_image( t);
+                free_image( tmp);
+            }
             char f[128];
             sprintf( f, "./spc/%d_soft", get_current_batch(net)/10);
             save_image(spc, f);
@@ -172,10 +170,35 @@ void train_segmenter(char *datacfg, char *cfgfile, char *weightfile, int *gpus, 
             //-------------------------------
 
 
+           // free_image( tr);
+           // free_image( pr);
+           // free_image( diff);
+           // free_image( dist);
             free_image( spc);
         }
         if( get_current_batch(net)%100 == 0){
             char buff[256];
+           // char file_name[21];
+           // image tr = collapse_birds_layers( float_to_image(net->w/div, net->h/div, 12, train.y.vals[net->batch*(net->subdivisions-1)]), 1);
+           // sprintf( file_name, "%d_truth", get_current_batch(net)/100);
+           // save_image_16(tr, file_name);
+           // image im = collapse_image_layers( float_to_image(net->w, net->h, 9, train.X.vals[net->batch*(net->subdivisions-1)]), 1);
+           // sprintf( file_name, "%d_input", get_current_batch(net)/100);
+           // save_image(im, file_name);
+           // free_image( im);
+           // sprintf( file_name, "%d", get_current_batch(net)/100);
+           // image pr = collapse_birds_layers(pred, 1);
+           // save_image_16(pr, file_name);
+           // image dist = image_distance( tr, pr);
+           // sprintf( file_name, "%d_dist", get_current_batch(net)/100);
+           // save_image_16(dist, file_name);
+           // image diff = image_diff( tr, pr);
+           // sprintf( file_name, "%d_diff", get_current_batch(net)/100);
+           // save_image_16(diff, file_name);
+           // free_image( tr);
+           // free_image( pr);
+           // free_image( diff);
+           // free_image( dist);
             sprintf(buff, "%s/%s.backup",backup_directory,base);
             save_weights(net, buff);
         }
@@ -190,6 +213,160 @@ void train_segmenter(char *datacfg, char *cfgfile, char *weightfile, int *gpus, 
     free_list(plist);
     free(base);
     fclose(train_csv_file);
+}
+
+void seq_predict_segmenter(char *datafile, char *cfg, char *weights, char *filename, int* gpus)
+{
+  cuda_set_device(gpus[0]);
+  network *net = load_network(cfg, weights, 0);
+  set_batch_network(net, 1);
+
+  char buff[256];
+  char *input = buff;
+  list *plist = get_paths(filename);
+  char **paths = (char **)list_to_array(plist);
+  int n,m, w = net->w, h = net->h;
+  image in = make_image( net->w, net->h, net->c);
+  image result = make_image( w*2+3, h*6+15, 3);
+  fill_image( result, 1.);
+  image im = make_empty_image(0,0,0);
+  image sized = make_empty_image( 0,0,0);
+  for( n=8; n < plist->size; ++n)
+  {
+    int dx = 0, dy = 0;
+    for( m = 0; m < 9; ++m)
+    {
+      strncpy(input, paths[n-m], 256);
+      im = load_image_color(input, 0, 0);
+      sized = crop_image(im, dx, dy, net->w, net->h);
+      memcpy( in.data + m*in.h*in.w, sized.data, sized.h*sized.w*sizeof( float));
+      free_image( sized);
+      free_image(im);
+    }
+    float *X = in.data;
+    network_predict(net, X);
+    image pred = get_network_image(net);
+    image tmp = make_empty_image(0,0,0);
+    int ind_spc;
+    image msk = get_image_layer( pred, 0);
+    tmp = bird_to_rgb( msk, 0);
+    place_image( tmp, pred.w, pred.h,  dx, dy, result);
+    place_image( tmp, pred.w, pred.h,  dx+w+3, dy, result);
+    free_image( tmp);
+    for( ind_spc = 1; ind_spc <6; ind_spc++)
+    {
+        image t = get_image_layer( pred, ind_spc);
+        tmp = bird_to_rgb( t, ind_spc);
+        place_image( tmp, pred.w, pred.h, dx, ind_spc*(h+3)+dy, result);
+        free_image( tmp);
+        mul_cpu( pred.w*pred.h, msk.data, 1, t.data, 1);
+        tmp = bird_to_rgb( t, ind_spc);
+        place_image( tmp, pred.w, pred.h,  w+3+dx, ind_spc*(h+3)+dy, result);
+        free_image( t);
+        free_image( tmp);
+    }
+    char f[128];
+    sprintf( f, "./result/%d", n);
+    free_image( msk);
+    //show_image(im, "orig", 1);
+    //show_image(result, "pred", 0);
+    char pred_name[256];
+    strncpy(input, paths[n], 256);
+    sprintf( pred_name, "results/pred_%s", basecfg( input));
+    save_image(result, pred_name);
+  }
+  free_image(result);
+}
+
+void seq_crop_predict_segmenter(char *datafile, char *cfg, char *weights, char *filename)
+{
+  network *net = load_network(cfg, weights, 0);
+  set_batch_network(net, 1);
+
+  char buff[256];
+  char *input = buff;
+  list *plist = get_paths(filename);
+  char **paths = (char **)list_to_array(plist);
+  int n,m, w = 1920, h = 1080;
+  image in = make_image( net->w, net->h, net->c);
+  image result = make_image( w*2+3, h*6+15, 3);
+  fill_image( result, 1.);
+  image im = make_empty_image(0,0,0);
+  image sized = make_empty_image( 0,0,0);
+  for( n=8; n < plist->size; ++n)
+  {
+    int oi ,oj;
+    for( oi = 0; oi < 4; ++oi)
+    {
+      for( oj = 0; oj < 2; oj++)
+      {
+        int dx, dy;
+        switch( oi)
+        {
+          case 0:
+            dx = 0;
+            break;
+
+          case 1:
+            dx = 416;
+            break;
+
+          case 2:
+            dx = 896;
+            break;
+
+          case 3:
+            dx = 1312;
+            break;
+        }
+        if( oj)
+          dy = 472;
+        else
+          dy = 0;
+        for( m = 0; m < 9; ++m)
+        {
+          strncpy(input, paths[n-m], 256);
+          im = load_image_color(input, 0, 0);
+          sized = crop_image(im, dx, dy, net->w, net->h);
+          memcpy( in.data + m*in.h*in.w, sized.data, sized.h*sized.w*sizeof( float));
+          free_image( sized);
+          free_image(im);
+        }
+        float *X = in.data;
+        network_predict(net, X);
+        image pred = get_network_image(net);
+        image tmp = make_empty_image(0,0,0);
+        int ind_spc;
+        image msk = get_image_layer( pred, 0);
+        tmp = bird_to_rgb( msk, 0);
+        place_image( tmp, pred.w, pred.h,  dx, dy, result);
+        place_image( tmp, pred.w, pred.h,  dx+w+3, dy, result);
+        free_image( tmp);
+        for( ind_spc = 1; ind_spc <6; ind_spc++)
+        {
+            image t = get_image_layer( pred, ind_spc);
+            tmp = bird_to_rgb( t, ind_spc);
+            place_image( tmp, pred.w, pred.h, dx, ind_spc*(h+3)+dy, result);
+            free_image( tmp);
+            mul_cpu( pred.w*pred.h, msk.data, 1, t.data, 1);
+            tmp = bird_to_rgb( t, ind_spc);
+            place_image( tmp, pred.w, pred.h,  w+3+dx, ind_spc*(h+3)+dy, result);
+            free_image( t);
+            free_image( tmp);
+        }
+        char f[128];
+        sprintf( f, "./result/%d", n);
+        free_image( msk);
+      }
+    }
+    //show_image(im, "orig", 1);
+    //show_image(result, "pred", 0);
+    char pred_name[256];
+    strncpy(input, paths[n], 256);
+    sprintf( pred_name, "results/pred_%s", basecfg( input));
+    save_image(result, pred_name);
+  }
+  free_image(result);
 }
 
 void batch_predict_segmenter(char *datafile, char *cfg, char *weights, char *filename)
@@ -492,7 +669,7 @@ void run_segmenter(int argc, char **argv)
     if(0==strcmp(argv[2], "test")) predict_segmenter(data, cfg, weights, filename);
     else if(0==strcmp(argv[2], "train")) train_segmenter(data, cfg, weights, gpus, ngpus, clear, display);
     else if(0==strcmp(argv[2], "demo")) demo_segmenter(data, cfg, weights, cam_index, filename);
-    else if(0==strcmp(argv[2], "batchtest")) batch_predict_segmenter(data, cfg, weights, filename);
+    else if(0==strcmp(argv[2], "batchtest")) seq_predict_segmenter(data, cfg, weights, filename, gpus);
     else if(0==strcmp(argv[2], "visualize")) predict_visualize_single_crop(data, cfg, weights, filename);
 }
 
