@@ -899,7 +899,7 @@ data load_data_seg_seq(int n, int m, int w, int h, int classes, int min, int max
 
 
     d.y.rows = n;
-    d.y.cols = h*w*12;
+    d.y.cols = h*w*3;
     d.y.vals = calloc(d.X.rows, sizeof(float*));
 
     int valid;
@@ -919,7 +919,7 @@ data load_data_seg_seq(int n, int m, int w, int h, int classes, int min, int max
             float dexp = rand_scale(exposure);
             for( j = 0; j < 9; j++){
                 char path[256];
-                sprintf( path, "/local_home/dataset/birdies/birdgen/output/image/sequence_%d_cam_%d_frame_%d.png", s, c, f-j);
+                sprintf( path, "/local_home/sepehr/birdies/birdgen/debugged/image/sequence_%d_cam_%d_frame_%d.png", s, c, f-j);
                 orig = load_image_color( path, 0, 0);
 
                 sized = crop_image(orig, dx, dy, w, h);

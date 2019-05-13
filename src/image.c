@@ -1105,11 +1105,11 @@ image crop_seg_gt_conf(image im, int dx, int dy, int w, int h, int* valid)
 image crop_seg_gt_8dof( int dx, int dy, int w, int h, int* valid, int seq, int cam, int frame)
 {
     int i, j;
-    image gt = make_image(w, h, 12);
+    image gt = make_image(w, h, 3);
     char path[256];
 
     // X,Y, birdness, spicies and Wing beaats phase
-    sprintf( path, "/local_home/dataset/birdies/birdgen/output/label/sp/sequence_%d_cam_%d_frame_%d_sp.png", seq, cam, frame);
+    sprintf( path, "/local_home/sepehr/birdies/birdgen/debugged/label/sp/sequence_%d_cam_%d_frame_%d_sp.png", seq, cam, frame);
     image lb = load_image_16(path, 1);
     for(j = 0; j < h; ++j){
         for(i = 0; i < w; ++i){
@@ -1131,100 +1131,29 @@ image crop_seg_gt_8dof( int dx, int dy, int w, int h, int* valid, int seq, int c
         free_image( lb);
         return gt;
     }
-    sprintf( path, "/local_home/dataset/birdies/birdgen/output/label/px/sequence_%d_cam_%d_frame_%d_px.png", seq, cam, frame);
-    image lbX = load_image_16(path, 1);
-    sprintf( path, "/local_home/dataset/birdies/birdgen/output/label/py/sequence_%d_cam_%d_frame_%d_py.png", seq, cam, frame);
-    image lbY = load_image_16(path, 1);
-    sprintf( path, "/local_home/dataset/birdies/birdgen/output/label/fp/sequence_%d_cam_%d_frame_%d_fp.png", seq, cam, frame);
-    image lbWB = load_image_16(path, 1);
     for(j = 0; j < h; ++j){
         for(i = 0; i < w; ++i){
             int r = j + dy;
             int c = i + dx;
-            float valX = 0, valY = 0, val = 0, alpha = 0, jackdaw = 0, rook = 0;
+            float val = 0, jackdaw = 0, rook = 0;
             r = constrain_int(r, 0, lb.h-1);
             c = constrain_int(c, 0, lb.w-1);
             val = get_pixel(lb, c, r, 0);
             if( val > 1e-9)
             {
-                alpha = 1.0;
                 if( val > 0.9)
                     jackdaw = 1.;
                 else
                     rook = 1.;
                 set_pixel(gt, i, j, 2, rook);
                 set_pixel(gt, i, j, 1, jackdaw);
-                set_pixel(gt, i, j, 0, alpha);
-                valX = get_pixel(lbX, c, r, 0)*lbX.w;
-                valY = get_pixel(lbY, c, r, 0)*lbY.h;
-                if( valX > 1e-9 || valY > 1e-9)
-                {
-                    float dist = sqrt( pow( c-valX,2) + pow( r-valY, 2));
-                    set_pixel(gt, i, j, 4, (valX-c)/dist);
-                    set_pixel(gt, i, j, 5, (valY-r)/dist);
-                }
-                float wb = TWO_PI*get_pixel(lbWB, c, r, 0);
-                set_pixel(gt, i, j, 10, sin(wb));
-                set_pixel(gt, i, j, 11, cos(wb));
+               // set_pixel(gt, i, j, 0, 1.);
             }
+            else
+                set_pixel(gt, i, j, 0, 1.);
         }
     }
-    free_image( lbX);
-    free_image( lbY);
     free_image( lb);
-    free_image( lbWB);
-
-    // depth
-    sprintf( path, "/local_home/dataset/birdies/birdgen/output/label/pz/sequence_%d_cam_%d_frame_%d_dp.png", seq, cam, frame);
-    lb = load_image_16(path, 1);
-    image sized = crop_image( lb, dx, dy, w, h);
-    memcpy( gt.data + 3*w*h, sized.data, w*h*sizeof( float));
-    free_image( lb);
-    free_image( sized);
-
-    image mask = get_image_layer( gt, 0);
-
-    // Qx
-    sprintf( path, "/local_home/dataset/birdies/birdgen/output/label/qx/sequence_%d_cam_%d_frame_%d_qx.png", seq, cam, frame);
-    lb = load_image_16_symmetric(path, 1);
-    sized = crop_image( lb, dx, dy, w, h);
-    image masked = mask_images( sized, mask);
-    memcpy( gt.data + 6*w*h, masked.data, w*h*sizeof( float));
-    free_image( lb);
-    free_image( sized);
-    free_image( masked);
-
-    // Qy
-    sprintf( path, "/local_home/dataset/birdies/birdgen/output/label/qy/sequence_%d_cam_%d_frame_%d_qy.png", seq, cam, frame);
-    lb = load_image_16_symmetric(path, 1);
-    sized = crop_image( lb, dx, dy, w, h);
-    masked = mask_images( sized, mask);
-    memcpy( gt.data + 7*w*h, masked.data, w*h*sizeof( float));
-    free_image( lb);
-    free_image( sized);
-    free_image( masked);
-
-    // Qz
-    sprintf( path, "/local_home/dataset/birdies/birdgen/output/label/qz/sequence_%d_cam_%d_frame_%d_qz.png", seq, cam, frame);
-    lb = load_image_16_symmetric(path, 1);
-    sized = crop_image( lb, dx, dy, w, h);
-    masked = mask_images( sized, mask);
-    memcpy( gt.data + 8*w*h, masked.data, w*h*sizeof( float));
-    free_image( lb);
-    free_image( sized);
-    free_image( masked);
-
-    // Qw
-    sprintf( path, "/local_home/dataset/birdies/birdgen/output/label/qw/sequence_%d_cam_%d_frame_%d_qw.png", seq, cam, frame);
-    lb = load_image_16_symmetric(path, 1);
-    sized = crop_image( lb, dx, dy, w, h);
-    masked = mask_images( sized, mask);
-    memcpy( gt.data + 9*w*h, masked.data, w*h*sizeof( float));
-    free_image( lb);
-    free_image( sized);
-    free_image( mask);
-    free_image( masked);
-
     return gt;
 }
 

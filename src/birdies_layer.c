@@ -10,14 +10,14 @@
 #include <string.h>
 #include <stdlib.h>
 
-layer make_birdies_layer(int batch, int w, int h)
+layer make_birdies_layer(int batch, int w, int h, ACTIVATION activation)
 {
     layer l = {0};
     l.type = BIRDIES;
 
     l.h = h;
     l.w = w;
-    l.c = 12;
+    l.c = 3;//12;
     l.out_w = l.w;
     l.out_h = l.h;
     l.out_c = l.c;
@@ -31,6 +31,7 @@ layer make_birdies_layer(int batch, int w, int h)
     l.output = calloc(batch*l.outputs, sizeof(float));
     l.scales = calloc(l.h*l.w, sizeof(float));
 
+    l.activation = activation;
     l.forward = forward_birdies_layer;
     l.backward = backward_birdies_layer;
 #ifdef GPU
@@ -57,50 +58,25 @@ void forward_birdies_layer(const layer l, network net)
     memset(l.scales, 0, l.w * l.h * sizeof(float));
 
 #ifndef GPU
-    for (b = 0; b < l.batch; ++b){
-        for(i = 0; i < l.c; ++i){
-            int index = b*l.outputs + i*l.w*l.h;
-            if( i<4) // for Birdness, Spicies, and Depth
-                activate_array(l.output + index, l.w*l.h, LOGISTIC);
-            else
-                activate_array(l.output + index, l.w*l.h, TANH);
-        }
-    }
+    activate_array(l.output, l.outputs*l.batch, l.activation);
 #endif
 
-    float *mse = calloc( l.c, sizeof( float));
-    for (b = 0; b < l.batch; ++b){
-        // Birdness thingy
-        l1_cpu( l.w*l.h, l.output + b*l.outputs, net.truth + b*l.outputs, l.delta + b*l.outputs, l.loss + b*l.outputs);
-        float sum = 0;
-        int count;
-        mse[0] += sum_array(l.loss + b*l.outputs, l.w*l.h)/(l.w*l.h);
-        memcpy( l.scales, net.truth + b*l.outputs, l.w*l.h*sizeof( float));
-        // Other predictions
-        for(i = 1; i < l.c; ++i){
-            sum = 0;
-            count = 0;
-            for(k = 0; k < l.w*l.h; ++k){
-                if( l.scales[k] > 0.5)//mask is bird
-                {
-                    int index = b*l.outputs + i*l.w*l.h + k;
-                    if( i < 3) // For scpicies
-                       l2_cpu( 1, l.output + index, net.truth + index, l.delta + index, l.loss + index);
-                    else if( i < 6)
-                        smooth_l1_cpu( 1, l.output + index, net.truth + index, l.delta + index, l.loss + index);
-                    else
-                        l2_cpu( 1, l.output + index, net.truth + index, l.delta + index, l.loss + index);
-                       // l.delta[index] = net.truth[ index] - l.output[index];
-                    count++;
-                    sum += l.loss[ index];
-                }
-            }
-            mse[i] += sum/count;
-        }
+    if( l.activation == LOGISTIC)
+    {
+        l2_cpu( l.outputs*l.batch, l.output, net.truth, l.delta, l.loss);
     }
-    printf("Birdness:%15.12f Jackdaw:%15.12f Rook:%15.12f Dx:%15.12f Dy:%15.12f Dz:%15.12f Qx:%15.12f Qy:%15.12f Qz:%15.12f Qw:%15.12f WB(sin):%15.12f WB(cos):%15.12f \n", mse[0], mse[1], mse[2], mse[4], mse[5], mse[3], mse[6], mse[7], mse[8], mse[9], mse[10], mse[11]);
-    free(mse);
+    else
+    {
+        for (b = 0; b < l.batch; ++b){
+            for(k = 0; k < l.w*l.h; ++k){
+                int index = b*l.outputs + k;
+                softmax( l.output+index, 3, 1., l.w*l.h, l.output+index);
+            }
+        }
+        softmax_x_ent_cpu( l.outputs, l.output, net.truth, l.delta, l.loss);
+    }
 
+    printf("Birdness:%30.12f Jackdaw:%30.12f Rook:%30.12f \n", sum_array(l.loss, l.w*l.h), sum_array(l.loss+l.w*l.h, l.w*l.h), sum_array(l.loss+2*l.w*l.h, l.w*l.h));
     *(l.cost) = sum_array(l.loss, l.batch*l.inputs); //pow(mag_array(l.delta, l.outputs * l.batch), 2);
     //printf("took %lf sec\n", what_time_is_it_now() - time);
 }
@@ -115,17 +91,7 @@ void backward_birdies_layer(const layer l, network net)
 void forward_birdies_layer_gpu(const layer l, network net)
 {
     copy_gpu(l.batch*l.inputs, net.input_gpu, 1, l.output_gpu, 1);
-    int b, i;
-    for (b = 0; b < l.batch; ++b){
-        for(i = 0; i < l.c; ++i){
-            int index = b*l.outputs + i*l.w*l.h;
-            if( i<4) // for Birdness, Spicies, and Depth
-                activate_array_gpu(l.output_gpu + index, l.w*l.h, LOGISTIC);
-            else
-                activate_array_gpu(l.output_gpu + index, l.w*l.h, TANH);
-        }
-    }
-
+    activate_array_gpu(l.output_gpu, l.outputs*l.batch, l.activation);
     cuda_pull_array(l.output_gpu, net.input, l.batch*l.inputs);
     forward_birdies_layer(l, net);
     cuda_push_array(l.delta_gpu, l.delta, l.batch*l.outputs);
