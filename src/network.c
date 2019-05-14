@@ -1088,6 +1088,28 @@ void sync_nets(network **nets, int n, int interval)
     free(threads);
 }
 
+void train_network_dual(network **nets, int n, data d, float* loss)
+{
+    int i;
+    int batch = nets[0]->batch;
+    int subdivisions = nets[0]->subdivisions;
+    assert(batch * subdivisions * n == d.X.rows);
+    pthread_t *threads = (pthread_t *) calloc(n, sizeof(pthread_t));
+    float *errors = (float *) calloc(n, sizeof(float));
+
+    for(i = 0; i < n; ++i){
+        threads[i] = train_network_in_thread(nets[i], d, errors + i);
+    }
+    for(i = 0; i < n; ++i){
+        pthread_join(threads[i], 0);
+        //printf("%f\n", errors[i]);
+        loss[i] = errors[i];
+    }
+    //cudaDeviceSynchronize();
+    free(threads);
+    free(errors);
+}
+
 float train_networks(network **nets, int n, data d, int interval)
 {
     int i;

@@ -503,7 +503,7 @@ image collapse_birds_layers(image source, int border)
 image bird_to_rgb(image mask, int channel)
 {
     image im = make_image(mask.w, mask.h, 3);
-    int i, j;
+    int i;
     for(i = 0; i < im.w*im.h; ++i){
         if( channel < 4)
         {

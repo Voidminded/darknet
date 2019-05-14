@@ -646,6 +646,7 @@ void backward_network_gpu(network *net);
 void update_network_gpu(network *net);
 
 float train_networks(network **nets, int n, data d, int interval);
+void train_network_dual(network **nets, int n, data d, float* loss);
 void sync_nets(network **nets, int n, int interval);
 void harmless_update_network_gpu(network *net);
 #endif
