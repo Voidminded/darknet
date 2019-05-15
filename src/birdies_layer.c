@@ -10,7 +10,7 @@
 #include <string.h>
 #include <stdlib.h>
 
-layer make_birdies_layer(int batch, int w, int h, ACTIVATION activation)
+layer make_birdies_layer(int batch, int w, int h, ACTIVATION activation, int extra)
 {
     layer l = {0};
     l.type = BIRDIES;
@@ -32,8 +32,10 @@ layer make_birdies_layer(int batch, int w, int h, ACTIVATION activation)
     l.scales = calloc(l.h*l.w, sizeof(float));
 
     l.activation = activation;
+    l.extra = extra;
     l.forward = forward_birdies_layer;
     l.backward = backward_birdies_layer;
+    l.state = calloc(3, sizeof(float));
 #ifdef GPU
     l.forward_gpu = forward_birdies_layer_gpu;
     l.backward_gpu = backward_birdies_layer_gpu;
@@ -63,23 +65,45 @@ void forward_birdies_layer(const layer l, network net)
 
     if(!net.truth)
       return;
-    if( l.activation == LOGISTIC)
+    if( !l.extra)
     {
         l2_cpu( l.outputs*l.batch, l.output, net.truth, l.delta, l.loss);
+        l.state[0] += sum_array(l.loss, l.w*l.h)+sum_array(l.loss+l.outputs, l.w*l.h);
+        l.state[1] += sum_array(l.loss+l.w*l.h, l.w*l.h)+sum_array(l.loss+l.w*l.h+l.outputs, l.w*l.h);
+        l.state[2] += sum_array(l.loss+2*l.w*l.h, l.w*l.h)+sum_array(l.loss+2*l.w*l.h+l.outputs, l.w*l.h);
+        if(((*net.seen)/net.batch)%net.subdivisions == 0){
+            printf("Sigmoid\t Loss: %15.6f   Birdness:%15.6f   Jackdaw:%15.6f   Rook:%15.6f\n", (l.state[0]+l.state[1]+l.state[2])/(net.batch*net.subdivisions), l.state[0]/(net.batch*net.subdivisions), l.state[1]/(net.batch*net.subdivisions), l.state[2]/(net.batch*net.subdivisions));
+            memset(l.state, 0, 3 * sizeof( float));
+        }
+
     }
     else
     {
+        int count = 0;
         for (b = 0; b < l.batch; ++b){
-            for(k = 0; k < l.w*l.h; ++k){
-                int index = b*l.outputs + k;
-                softmax( l.output+index, 3, 1., l.w*l.h, l.output+index);
+            l2_cpu( l.w*l.h, l.output + b*l.outputs, net.truth + b*l.outputs, l.delta + b*l.outputs, l.loss + b*l.outputs);
+            memcpy( l.scales, net.truth + b*l.outputs, l.w*l.h*sizeof( float));
+            for(i = 1; i < l.c; ++i){
+                for(k = 0; k < l.w*l.h; ++k){
+                    if( l.scales[k] > 0.5){//mask is bird 
+                        int index = b*l.outputs + i*l.w*l.h + k;
+                        l2_cpu( 1, l.output + index, net.truth + index, l.delta + index, l.loss + index);
+                        count++;
+                    }
+                }
             }
         }
-        softmax_x_ent_cpu( l.outputs, l.output, net.truth, l.delta, l.loss);
+        l.state[0] += sum_array(l.loss, l.w*l.h)+sum_array(l.loss+l.outputs, l.w*l.h);
+        l.state[1] += sum_array(l.loss+l.w*l.h, l.w*l.h)+sum_array(l.loss+l.w*l.h+l.outputs, l.w*l.h);
+        l.state[2] += sum_array(l.loss+2*l.w*l.h, l.w*l.h)+sum_array(l.loss+2*l.w*l.h+l.outputs, l.w*l.h);
+        if(((*net.seen)/net.batch)%net.subdivisions == 0){
+            printf("Extra\t Loss: %15.6f   Birdness:%15.6f   Jackdaw:%15.6f   Rook:%15.6f\n", (l.state[0]+l.state[1]+l.state[2])/(net.batch*net.subdivisions), l.state[0]/(net.batch*net.subdivisions), l.state[1]/(net.batch*net.subdivisions), l.state[2]/(net.batch*net.subdivisions));
+            memset(l.state, 0, 3 * sizeof( float));
+        }
     }
 
-    printf("Birdness:%30.12f Jackdaw:%30.12f Rook:%30.12f \n", sum_array(l.loss, l.w*l.h), sum_array(l.loss+l.w*l.h, l.w*l.h), sum_array(l.loss+2*l.w*l.h, l.w*l.h));
     *(l.cost) = sum_array(l.loss, l.batch*l.inputs); //pow(mag_array(l.delta, l.outputs * l.batch), 2);
+
     //printf("took %lf sec\n", what_time_is_it_now() - time);
 }
 

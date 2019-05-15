@@ -1093,7 +1093,7 @@ void train_network_dual(network **nets, int n, data d, float* loss)
     int i;
     int batch = nets[0]->batch;
     int subdivisions = nets[0]->subdivisions;
-    assert(batch * subdivisions * n == d.X.rows);
+    assert(batch * subdivisions  == d.X.rows);
     pthread_t *threads = (pthread_t *) calloc(n, sizeof(pthread_t));
     float *errors = (float *) calloc(n, sizeof(float));
 

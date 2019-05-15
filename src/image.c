@@ -1147,10 +1147,10 @@ image crop_seg_gt_8dof( int dx, int dy, int w, int h, int* valid, int seq, int c
                     rook = 1.;
                 set_pixel(gt, i, j, 2, rook);
                 set_pixel(gt, i, j, 1, jackdaw);
-               // set_pixel(gt, i, j, 0, 1.);
-            }
-            else
                 set_pixel(gt, i, j, 0, 1.);
+            }
+           // else
+           //     set_pixel(gt, i, j, 0, 1.);
         }
     }
     free_image( lb);

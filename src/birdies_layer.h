@@ -5,7 +5,7 @@
 #include "layer.h"
 #include "network.h"
 
-layer make_birdies_layer(int batch, int w, int h, ACTIVATION activation);
+layer make_birdies_layer(int batch, int w, int h, ACTIVATION activation, int extra);
 void forward_birdies_layer(const layer l, network net);
 void backward_birdies_layer(const layer l, network net);
 

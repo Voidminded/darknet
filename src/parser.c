@@ -355,8 +355,9 @@ layer parse_iseg(list *options, size_params params)
 layer parse_birdies(list *options, size_params params)
 {
     char *activation_s = option_find_str(options, "activation", "logistic");
+    int extra = option_find_int_quiet(options, "extra",0);
     ACTIVATION activation = get_activation(activation_s);
-    layer l = make_birdies_layer(params.batch, params.w, params.h, activation);
+    layer l = make_birdies_layer(params.batch, params.w, params.h, activation, extra);
     assert(l.outputs == params.inputs);
     return l;
 }

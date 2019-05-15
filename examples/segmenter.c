@@ -229,7 +229,7 @@ void dual_train_segmenter(char *datacfg, char *cfgfile1, char *cfgfile2, char *w
     for( i = 0; i < 2; ++i)
     {
         sprintf( train_csv_name, "%s_train.csv", base[i]);
-        train_csv_file[i] = fopen(train_csv_name,"w+");
+        train_csv_file[i] = fopen(train_csv_name,"a");
         fprintf(train_csv_file[i],"Batche,Epoch,Loss,Avg,Rate\n");
     }
     printf("%s & %s\n", base[0], base[1]);
@@ -327,35 +327,37 @@ void dual_train_segmenter(char *datacfg, char *cfgfile1, char *cfgfile2, char *w
         }
         if( get_current_batch(net)%10 == 0){
             image trth = float_to_image(net->w/div, net->h/div, 3, train.y.vals[net->batch*(net->subdivisions-1)]);
-            image spc = make_image( trth.w*3+6, trth.h*3+6, 3);
+            image spc = make_image( trth.w*5+2, trth.h*3+6, 1);
             fill_image( spc, 1.);
             image tmp = make_empty_image(0,0,0);
             int ind_spc;
-            for( ind_spc = 0; ind_spc <3; ind_spc++)
-            {
-                tmp = get_image_layer( trth, ind_spc);
-                place_image( tmp, trth.w, trth.h,  0, ind_spc*(trth.h+3), spc);
-                free_image( tmp);
-            }
             image msk = get_image_layer( pred[0], 0);
-            tmp = bird_to_rgb( msk, 0);
-            place_image( tmp, pred[0].w, pred[0].h,  pred[0].w+3, 0, spc);
-            free_image( tmp);
+            place_image( msk, pred[0].w, pred[0].h,  0, 0, spc);
+            place_image( msk, pred[0].w, pred[0].h,  pred[0].w+3, 0, spc);
             for( ind_spc = 1; ind_spc <3; ind_spc++)
             {
                 image t = get_image_layer( pred[0], ind_spc);
+                place_image( t, pred[0].w, pred[0].h,  0, ind_spc*(pred[0].h+3), spc);
                 mul_cpu( pred[0].w*pred[0].h, msk.data, 1, t.data, 1);
-                tmp = bird_to_rgb( t, ind_spc);
-                place_image( tmp, pred[0].w, pred[0].h,  pred[0].w+3, ind_spc*(pred[0].h+3), spc);
+                place_image( t, pred[0].w, pred[0].h,  pred[0].w+3, ind_spc*(pred[0].h+3), spc);
                 free_image( t);
-                free_image( tmp);
             }
             for( ind_spc = 0; ind_spc <3; ind_spc++)
             {
+                image t = get_image_layer( trth, ind_spc);
+                place_image( t, trth.w, trth.h,  2*(trth.w+3), ind_spc*(trth.h+3), spc);
+                free_image( t);
+            }
+            free_image( msk);
+            msk = get_image_layer( pred[1], 0);
+            place_image( msk, pred[1].w, pred[1].h,  3*(pred[1].w+3), 0, spc);
+            place_image( msk, pred[1].w, pred[1].h,  4*(pred[1].w+3), 0, spc);
+            for( ind_spc = 1; ind_spc <3; ind_spc++)
+            {
                 image t = get_image_layer( pred[1], ind_spc);
-                tmp = bird_to_rgb( t, ind_spc);
-                place_image( tmp, pred[1].w, pred[1].h, 2*(pred[1].w+3), ind_spc*(pred[1].h+3), spc);
-                free_image( tmp);
+                place_image( t, pred[1].w, pred[1].h,  4*(pred[1].w+3), ind_spc*(pred[0].h+3), spc);
+                mul_cpu( pred[1].w*pred[1].h, msk.data, 1, t.data, 1);
+                place_image( t, pred[1].w, pred[1].h,  3*(pred[1].w+3), ind_spc*(pred[0].h+3), spc);
                 free_image( t);
             }
             char f[128];
