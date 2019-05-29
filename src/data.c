@@ -882,11 +882,11 @@ data load_data_seg_conf(int n, char **paths, int m, int w, int h, int classes, i
     return d;
 }
 
-data load_data_seg_seq(int n, int m, int w, int h, int classes, int min, int max, float angle, float aspect, float hue, float saturation, float exposure, int div)
+data load_data_seg_seq(int n, int steps, int skip, int w, int h, float hue, float saturation, float exposure)
 {
     int cams = 4;
     int seqs = 1200;
-    int frames = 51;
+    int frames = 60-steps*(skip+1);
     int i,j;
     data d = {0};
     d.shallow = 0;
@@ -895,7 +895,7 @@ data load_data_seg_seq(int n, int m, int w, int h, int classes, int min, int max
 
     d.X.rows = n;
     d.X.vals = calloc(d.X.rows, sizeof(float*));
-    d.X.cols = h*w*9;
+    d.X.cols = h*w*steps;
 
 
     d.y.rows = n;
@@ -906,27 +906,27 @@ data load_data_seg_seq(int n, int m, int w, int h, int classes, int min, int max
     for(i = 0; i < n; ++i)
     {
         valid = 0;
-        image input = make_image(w, h, 9);
+        image input = make_image(w, h, steps);
         while(!valid)
         {
             int c = rand()%cams;
             int s = rand()%seqs;
-            int f = rand()%frames + 9;
+            int f = rand()%frames + steps*(skip+1);
             int dx = rand_int(0, 1920 - w);
             int dy = rand_int(0, 1080 - h);
             float dhue = rand_uniform(-hue, hue);
             float dsat = rand_scale(saturation);
             float dexp = rand_scale(exposure);
-            for( j = 0; j < 9; j++){
+            for( j = 0; j < steps; j++){
                 char path[256];
-                sprintf( path, "/local_home/sepehr/birdies/birdgen/debugged/image/sequence_%d_cam_%d_frame_%d.png", s, c, f-j);
+                sprintf( path, "/local_home/sepehr/birdies/birdgen/debugged/image/sequence_%d_cam_%d_frame_%d.png", s, c, f-j*(skip+1));
                 orig = load_image_color( path, 0, 0);
 
                 sized = crop_image(orig, dx, dy, w, h);
 
                 distort_image(sized, dhue, dsat, dexp);
                 if( j == 0){
-                    image sized_m = crop_seg_gt_8dof( dx, dy, w, h, &valid, s, c, f-j);
+                    image sized_m = crop_seg_gt_8dof( dx, dy, w, h, &valid, s, c, f);
                     //image truth_debug = collapse_birds_layers( sized_m, 0.5);
                     //save_image_16( truth_debug, "truth_debugged");
                     //free_image( truth_debug);
@@ -1409,7 +1409,7 @@ void *load_thread(void *ptr)
 //    } else if (a.type == SEGMENTATION_DATA){
 //        *a.d = load_data_seg_full(a.n, a.paths, a.m, a.w, a.h, a.classes, a.min, a.max, a.angle, a.aspect, a.hue, a.saturation, a.exposure, a.scale);
     } else if (a.type == SEGMENTATION_DATA){
-        *a.d = load_data_seg_seq(a.n, a.m, a.w, a.h, a.classes, a.min, a.max, a.angle, a.aspect, a.hue, a.saturation, a.exposure, a.scale);
+        *a.d = load_data_seg_seq(a.n, a.steps, a.skip, a.w, a.h, a.hue, a.saturation, a.exposure);
     } else if (a.type == REGION_DATA){
         *a.d = load_data_region(a.n, a.paths, a.m, a.w, a.h, a.num_boxes, a.classes, a.jitter, a.hue, a.saturation, a.exposure);
     } else if (a.type == DETECTION_DATA){

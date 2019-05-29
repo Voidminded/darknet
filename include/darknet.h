@@ -450,6 +450,7 @@ typedef struct network{
     float scale;
     float power;
     int time_steps;
+    int skip_frames;
     int step;
     int max_batches;
     float *scales;
@@ -569,6 +570,8 @@ typedef struct load_args{
     int scale;
     int center;
     int coords;
+    int steps;
+    int skip;
     float jitter;
     float angle;
     float aspect;

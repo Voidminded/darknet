@@ -672,6 +672,7 @@ void parse_net_options(list *options, network *net)
     net->decay = option_find_float(options, "decay", .0001);
     int subdivs = option_find_int(options, "subdivisions",1);
     net->time_steps = option_find_int_quiet(options, "time_steps",1);
+    net->skip_frames = option_find_int_quiet(options, "skip_frames",0);
     net->notruth = option_find_int_quiet(options, "notruth",0);
     net->batch /= subdivs;
     net->batch *= net->time_steps;

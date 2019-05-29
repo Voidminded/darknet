@@ -19,19 +19,19 @@ void train_segmenter(char *datacfg, char *cfgfile, char *weightfile, int *gpus, 
 {
     int i;
 
-    char *train_csv_name = "train.csv";
-
-    FILE *train_csv_file = fopen(train_csv_name,"w+");
-    fprintf(train_csv_file,"Batche,Epoch,Loss,Avg,Rate\n");
-
     float avg_loss = -1;
     char *base = basecfg(cfgfile);
+    char train_csv_name[256];
+    sprintf( train_csv_name, "%s_train.csv", base);
+    FILE *train_csv_file = fopen(train_csv_name,"a");
+    fprintf(train_csv_file,"Batche,Epoch,Loss,Avg,Rate\n");
     printf("%s\n", base);
     printf("%d\n", ngpus);
     network **nets = calloc(ngpus, sizeof(network*));
 
     srand(time(0));
-    int seed = rand();
+    //int seed = rand();
+    int seed = 96369;
     for(i = 0; i < ngpus; ++i){
         srand(seed);
 #ifdef GPU
@@ -67,6 +67,8 @@ void train_segmenter(char *datacfg, char *cfgfile, char *weightfile, int *gpus, 
     args.h = net->h;
     args.threads = 4;
     args.scale = div;
+    args.steps = net->c;
+    args.skip = net->skip_frames;
 
     args.min = net->min_crop;
     args.max = net->max_crop;
@@ -277,6 +279,8 @@ void dual_train_segmenter(char *datacfg, char *cfgfile1, char *cfgfile2, char *w
     args.h = net->h;
     args.threads = 8;
     args.scale = div;
+    args.steps = net->c;
+    args.skip = net->skip_frames;
 
     args.min = net->min_crop;
     args.max = net->max_crop;
@@ -325,11 +329,10 @@ void dual_train_segmenter(char *datacfg, char *cfgfile1, char *cfgfile2, char *w
                 save_weights(net, buff);
             }
         }
-        if( get_current_batch(net)%10 == 0){
+        if( get_current_batch(net)%1 == 0){
             image trth = float_to_image(net->w/div, net->h/div, 3, train.y.vals[net->batch*(net->subdivisions-1)]);
             image spc = make_image( trth.w*5+2, trth.h*3+6, 1);
             fill_image( spc, 1.);
-            image tmp = make_empty_image(0,0,0);
             int ind_spc;
             image msk = get_image_layer( pred[0], 0);
             place_image( msk, pred[0].w, pred[0].h,  0, 0, spc);
@@ -364,6 +367,15 @@ void dual_train_segmenter(char *datacfg, char *cfgfile1, char *cfgfile2, char *w
             sprintf( f, "./dual/%d", get_current_batch(net)/10);
             save_image(spc, f);
 
+            image inp = make_image(net->w*2+1, (net->h*net->c+1), 1);
+            image im = collapse_image_layers( float_to_image(net->w, net->h, net->c, train.X.vals[nets[0]->batch*(net->subdivisions-1)]), 1);
+            place_image( im, im.w, im.h, 0, 0, inp);
+            free_image( im);
+            im = collapse_image_layers( float_to_image(net->w, net->h, net->c, train.X.vals[nets[1]->batch*(net->subdivisions-1)]), 1);
+            place_image( im, im.w, im.h, im.w+1, 0, inp);
+            save_image(inp, "input");
+            free_image( im);
+            free_image( inp);
             //-------------------------------
 
 
