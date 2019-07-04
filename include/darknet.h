@@ -92,7 +92,9 @@ typedef enum {
     LOGXENT,
     L2NORM,
     BLANK,
-    BIRDIES
+    BIRDIES,
+    BLASSIFY,
+    BIRDCHAN
 } LAYER_TYPE;
 
 typedef enum{
@@ -442,6 +444,7 @@ typedef struct network{
     layer *layers;
     float *output;
     learning_rate_policy policy;
+    FILE* log;
 
     float learning_rate;
     float momentum;

@@ -403,9 +403,18 @@ void visualize(char *cfgfile, char *weightfile)
 
 int main(int argc, char **argv)
 {
-    //image im = load_image_16("/local_home/Dev/birdies/birdgen/output/label/sequence_244_cam2_frame_12_gt.png", 3);
+//    image im = load_image_16("/local_home/dataset/birdies/birdgen/output/label/rk/sequence_213_cam_3_frame_30_rk.png", 1);
+//    float *empty;
+//    empty = calloc( im.w, sizeof(float));
+//    int i;
+//        printf("%d %d\n", im.w, im.h);
+//    for( i = 0; i < im.h; ++i)
+//    {
+//        int valid = memcmp( empty, im.data+i*im.w, im.w*sizeof(float));
+//        printf("%d ", valid);
+//    }
+//    return 0;
     //save_image_16( sized_m, "testalpha");
-    //show_image(im, "im", 3000);
 
     //test_gt_crop("/local_home/Dev/birdies/birdgen/output/label/sequence_0_cam_0_frame_0.png");
     //return 0;
@@ -418,7 +427,25 @@ int main(int argc, char **argv)
    // image sized = add_coordconv( im);
    // image collapesed = collapse_image_layers( sized, 1);
    // show_image( collapesed, "im", 0);
-   // return;
+ //   int valid, frame, ind_spc;
+ //   image trth = make_empty_image(0,0,0);
+ //   image tmp = make_empty_image(0,0,0);
+ //   char name[256];
+ //   for( frame = 0; frame < 60; ++frame)
+ //   {
+ //       trth = crop_seg_gt_8dof( 0, 0, 1920, 1080, &valid, 1005, 1, frame);
+ //       for( ind_spc = 0; ind_spc <12; ind_spc++)
+ //       {
+ //           image t = get_image_layer( trth, ind_spc);
+ //           tmp = bird_to_rgb( t, ind_spc);
+ //           free_image( t);
+ //           sprintf( name, "gtTest/%dgt%d", ind_spc, frame);
+ //           save_image( tmp, name);
+ //           free_image( tmp);
+ //       }
+ //       free_image(trth);
+ //   }
+ //   return;
 
     if(argc < 2){
         fprintf(stderr, "usage: %s <function>\n", argv[0]);

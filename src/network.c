@@ -252,7 +252,7 @@ void calc_network_cost(network *netp)
             ++count;
         }
     }
-    *net.cost = sum/count;
+    *net.cost = sum;// /count; Why divide by number of cosed layers?
 }
 
 int get_predicted_class_network(network *net)

@@ -885,7 +885,7 @@ data load_data_seg_conf(int n, char **paths, int m, int w, int h, int classes, i
 data load_data_seg_seq(int n, int m, int w, int h, int classes, int min, int max, float angle, float aspect, float hue, float saturation, float exposure, int div)
 {
     int cams = 4;
-    int seqs = 1200;
+    int seqs = 1800;
     int frames = 51;
     int i,j;
     data d = {0};
@@ -899,7 +899,9 @@ data load_data_seg_seq(int n, int m, int w, int h, int classes, int min, int max
 
 
     d.y.rows = n;
-    d.y.cols = h*w*12;
+    // Reduced channels
+    //d.y.cols = h*w*12;
+    d.y.cols = h*w*6;
     d.y.vals = calloc(d.X.rows, sizeof(float*));
 
     int valid;

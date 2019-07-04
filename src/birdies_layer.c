@@ -17,7 +17,7 @@ layer make_birdies_layer(int batch, int w, int h)
 
     l.h = h;
     l.w = w;
-    l.c = 12;
+    l.c = 9;//12;
     l.out_w = l.w;
     l.out_h = l.h;
     l.out_c = l.c;
@@ -33,6 +33,7 @@ layer make_birdies_layer(int batch, int w, int h)
 
     l.forward = forward_birdies_layer;
     l.backward = backward_birdies_layer;
+    l.state = calloc(9, sizeof(float));
 #ifdef GPU
     l.forward_gpu = forward_birdies_layer_gpu;
     l.backward_gpu = backward_birdies_layer_gpu;
@@ -60,10 +61,8 @@ void forward_birdies_layer(const layer l, network net)
     for (b = 0; b < l.batch; ++b){
         for(i = 0; i < l.c; ++i){
             int index = b*l.outputs + i*l.w*l.h;
-            if( i<3) // for Birdness and Spicies
-                activate_array(l.output + index, l.w*l.h, LOGISTIC);
-            else if( i == 3) // for depth
-                acivate_array(l.output + index, l.w*l.h, RELU);
+            if( !i) // for depth
+                activate_array(l.output + index, l.w*l.h, RELU);
             else
                 activate_array(l.output + index, l.w*l.h, LINEAR);
         }
@@ -71,39 +70,33 @@ void forward_birdies_layer(const layer l, network net)
 #endif
 
     if(!net.truth)
-      return;
-    float *mse = calloc( l.c, sizeof( float));
+        return;
     for (b = 0; b < l.batch; ++b){
-        // Birdness thingy
-        l2_cpu( l.w*l.h, l.output + b*l.outputs, net.truth + b*l.outputs, l.delta + b*l.outputs, l.loss + b*l.outputs);
-        float sum = 0;
-        int count;
-        mse[0] += sum_array(l.loss + b*l.outputs, l.w*l.h)/(l.w*l.h);
-        memcpy( l.scales, net.truth + b*l.outputs, l.w*l.h*sizeof( float));
+        memcpy( l.scales, net.truth + b*net.outputs, l.w*l.h*sizeof( float));
         // Other predictions
-        for(i = 1; i < l.c; ++i){
-            sum = 0;
-            count = 0;
+        for(i = 0; i < l.c; ++i){
             for(k = 0; k < l.w*l.h; ++k){
                 if( l.scales[k] > 0.5)//mask is bird
                 {
                     int index = b*l.outputs + i*l.w*l.h + k;
-                    if( i < 3) // For scpicies
-                        l2_cpu( 1, l.output + index, net.truth + index, l.delta + index, l.loss + index);
-                    else if( i < 6)
-                        l2_cpu( 1, l.output + index, net.truth + index, l.delta + index, l.loss + index);
-                    else
-                        l2_cpu( 1, l.output + index, net.truth + index, l.delta + index, l.loss + index);
-                       // l.delta[index] = net.truth[ index] - l.output[index];
-                    count++;
-                    sum += l.loss[ index];
+                    l1_cpu( 1, l.output + index, net.truth + b*net.outputs + i*l.w*l.h + k + 3*l.w*l.h, l.delta + index, l.loss + index);
                 }
             }
-            mse[i] += sum/count;
         }
+        l.state[0] += sum_array(l.loss+b*l.outputs, l.w*l.h); 
+        l.state[1] += sum_array(l.loss+l.w*l.h+b*l.outputs, l.w*l.h);
+        l.state[2] += sum_array(l.loss+2*l.w*l.h+b*l.outputs, l.w*l.h);
+        l.state[3] += sum_array(l.loss+3*l.w*l.h+b*l.outputs, l.w*l.h);
+        l.state[4] += sum_array(l.loss+4*l.w*l.h+b*l.outputs, l.w*l.h);
+        l.state[5] += sum_array(l.loss+5*l.w*l.h+b*l.outputs, l.w*l.h);
+        l.state[6] += sum_array(l.loss+6*l.w*l.h+b*l.outputs, l.w*l.h);
+        l.state[7] += sum_array(l.loss+7*l.w*l.h+b*l.outputs, l.w*l.h);
+        l.state[8] += sum_array(l.loss+8*l.w*l.h+b*l.outputs, l.w*l.h);
     }
-    printf("Birdness:%15.12f Jackdaw:%15.12f Rook:%15.12f Dx:%15.12f Dy:%15.12f Dz:%15.12f Qx:%15.12f Qy:%15.12f Qz:%15.12f Qw:%15.12f WB(sin):%15.12f WB(cos):%15.12f \n", mse[0], mse[1], mse[2], mse[4], mse[5], mse[3], mse[6], mse[7], mse[8], mse[9], mse[10], mse[11]);
-    free(mse);
+    if(((*net.seen)/net.batch)%net.subdivisions == 0){
+        printf("Birdies \tLoss: %12.6f  X:%12.6f  Y:%12.6f  Z:%12.6f  Qx: %12.6f  Qy: %12.6f  Qz: %12.6f  Qw: %12.6f  Sin(w): %12.6f  Cos(w): %12.6f\n", sum_array(l.state,l.c)/(net.batch*net.subdivisions), l.state[2]/(net.batch*net.subdivisions), l.state[0]/(net.batch*net.subdivisions), l.state[1]/(net.batch*net.subdivisions), l.state[3]/(net.batch*net.subdivisions), l.state[4]/(net.batch*net.subdivisions), l.state[5]/(net.batch*net.subdivisions), l.state[6]/(net.batch*net.subdivisions), l.state[7]/(net.batch*net.subdivisions), l.state[8]/(net.batch*net.subdivisions));
+        memset(l.state, 0, 9 * sizeof( float));
+    }
 
     *(l.cost) = sum_array(l.loss, l.batch*l.inputs); //pow(mag_array(l.delta, l.outputs * l.batch), 2);
     //printf("took %lf sec\n", what_time_is_it_now() - time);
@@ -123,9 +116,7 @@ void forward_birdies_layer_gpu(const layer l, network net)
     for (b = 0; b < l.batch; ++b){
         for(i = 0; i < l.c; ++i){
             int index = b*l.outputs + i*l.w*l.h;
-            if( i<3) // for Birdness and Spicies
-                activate_array_gpu(l.output_gpu + index, l.w*l.h, LOGISTIC);
-            else if( i == 3)
+            if( !i) // for Birdness and Spicies
                 activate_array_gpu(l.output_gpu + index, l.w*l.h, RELU);
             else
                 activate_array_gpu(l.output_gpu + index, l.w*l.h, LINEAR);

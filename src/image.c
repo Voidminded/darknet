@@ -505,7 +505,7 @@ image bird_to_rgb(image mask, int channel)
     image im = make_image(mask.w, mask.h, 3);
     int i, j;
     for(i = 0; i < im.w*im.h; ++i){
-        if( channel < 4)
+        if( channel < 3 || channel == 5)
         {
             im.data[i + 0*im.w*im.h] = mask.data[i];
             im.data[i + 1*im.w*im.h] = mask.data[i];
@@ -980,18 +980,19 @@ void scale_image(image m, float s)
 image crop_image(image im, int dx, int dy, int w, int h)
 {
     image cropped = make_image(w, h, im.c);
-    int i, j, k;
+    int  j, k;
     for(k = 0; k < im.c; ++k){
         for(j = 0; j < h; ++j){
-            for(i = 0; i < w; ++i){
-                int r = j + dy;
-                int c = i + dx;
-                float val = 0;
-                r = constrain_int(r, 0, im.h-1);
-                c = constrain_int(c, 0, im.w-1);
-                val = get_pixel(im, c, r, k);
-                set_pixel(cropped, i, j, k, val);
-            }
+        memcpy( cropped.data + k*w*h + j*w, im.data + k*im.w*im.h + (j+dy)*im.w + dx,w*sizeof(float));
+        //    for(i = 0; i < w; ++i){
+        //        int r = j + dy;
+        //        int c = i + dx;
+        //        float val = 0;
+        //        r = constrain_int(r, 0, im.h-1);
+        //        c = constrain_int(c, 0, im.w-1);
+        //        val = get_pixel(im, c, r, k);
+        //        set_pixel(cropped, i, j, k, val);
+        //    }
         }
     }
     return cropped;
@@ -1105,125 +1106,135 @@ image crop_seg_gt_conf(image im, int dx, int dy, int w, int h, int* valid)
 image crop_seg_gt_8dof( int dx, int dy, int w, int h, int* valid, int seq, int cam, int frame)
 {
     int i, j;
-    image gt = make_image(w, h, 12);
+    // for full 8 dof
+    // Reduced channels
+    //image gt = make_image(w, h, 12);
+    image gt = make_image(w, h, 6);
     char path[256];
 
-    // X,Y, birdness, spicies and Wing beaats phase
-    sprintf( path, "/local_home/dataset/birdies/birdgen/output/label/sp/sequence_%d_cam_%d_frame_%d_sp.png", seq, cam, frame);
+    // X,Y, birdness, Wing beaats phase
+    sprintf( path, "/local_home/dataset/birdies/birdgen/output/label/id/sequence_%d_cam_%d_frame_%d_id.png", seq, cam, frame);
     image lb = load_image_16(path, 1);
+    float *empty_w;
+    empty_w = calloc( w, sizeof(float));
     for(j = 0; j < h; ++j){
-        for(i = 0; i < w; ++i){
-            int r = j + dy;
-            int c = i + dx;
-            r = constrain_int(r, 0, lb.h-1);
-            c = constrain_int(c, 0, lb.w-1);
-            if( get_pixel(lb, c, r, 0) > 1e-9)
-            {
-                *valid = 1;
-                break;
-            }
-        }
-        if( *valid > 0.3)
+        *valid = memcmp( empty_w, lb.data+(j+dy)*lb.w+dx, w*sizeof(float));
+        if( *valid != 0)
             break;
     }
-    if( *valid < 1e-3)
+    if( *valid == 0)
     {
         free_image( lb);
+        free( empty_w);
         return gt;
     }
+    free( empty_w);
     sprintf( path, "/local_home/dataset/birdies/birdgen/output/label/px/sequence_%d_cam_%d_frame_%d_px.png", seq, cam, frame);
     image lbX = load_image_16(path, 1);
     sprintf( path, "/local_home/dataset/birdies/birdgen/output/label/py/sequence_%d_cam_%d_frame_%d_py.png", seq, cam, frame);
     image lbY = load_image_16(path, 1);
-    sprintf( path, "/local_home/dataset/birdies/birdgen/output/label/fp/sequence_%d_cam_%d_frame_%d_fp.png", seq, cam, frame);
-    image lbWB = load_image_16(path, 1);
+    // Reduced channels
+  //  sprintf( path, "/local_home/dataset/birdies/birdgen/output/label/fp/sequence_%d_cam_%d_frame_%d_fp.png", seq, cam, frame);
+  //  image lbWB = load_image_16(path, 1);
     for(j = 0; j < h; ++j){
         for(i = 0; i < w; ++i){
             int r = j + dy;
             int c = i + dx;
-            float valX = 0, valY = 0, val = 0, alpha = 0, jackdaw = 0, rook = 0;
+            float valX = 0, valY = 0, val = 0;
             r = constrain_int(r, 0, lb.h-1);
             c = constrain_int(c, 0, lb.w-1);
             val = get_pixel(lb, c, r, 0);
             if( val > 1e-9)
             {
-                alpha = 1.0;
-                if( val > 0.9)
-                    jackdaw = 1.;
-                else
-                    rook = 1.;
-                set_pixel(gt, i, j, 2, rook);
-                set_pixel(gt, i, j, 1, jackdaw);
-                set_pixel(gt, i, j, 0, alpha);
+                set_pixel(gt, i, j, 0, 1.);
                 valX = get_pixel(lbX, c, r, 0)*lbX.w;
                 valY = get_pixel(lbY, c, r, 0)*lbY.h;
                 if( valX > 1e-9 || valY > 1e-9)
                 {
                     float dist = sqrt( pow( c-valX,2) + pow( r-valY, 2));
-                    set_pixel(gt, i, j, 4, (valX-c)/dist);
-                    set_pixel(gt, i, j, 5, (valY-r)/dist);
+                    set_pixel(gt, i, j, 3, (valX-c)/dist);
+                    set_pixel(gt, i, j, 4, (valY-r)/dist);
                 }
-                float wb = TWO_PI*get_pixel(lbWB, c, r, 0);
-                set_pixel(gt, i, j, 10, sin(wb));
-                set_pixel(gt, i, j, 11, cos(wb));
+    // Reduced channels
+  //              float wb = TWO_PI*get_pixel(lbWB, c, r, 0);
+  //              set_pixel(gt, i, j, 10, sin(wb));
+  //              set_pixel(gt, i, j, 11, cos(wb));
             }
         }
     }
     free_image( lbX);
     free_image( lbY);
     free_image( lb);
-    free_image( lbWB);
+    // Reduced channels
+  //  free_image( lbWB);
+
+    // Jackdaw
+    sprintf( path, "/local_home/dataset/birdies/birdgen/output/label/jd/sequence_%d_cam_%d_frame_%d_jd.png", seq, cam, frame);
+    lb = load_image_16(path, 1);
+    image sized = crop_image( lb, dx, dy, w, h);
+    for(i = 0; i < sized.w*sized.h*sized.c; ++i)
+        sized.data[i] = sized.data[i]>0.3 ? 1 : 0;
+    memcpy( gt.data + w*h, sized.data, w*h*sizeof( float));
+    free_image( lb);
+    free_image( sized);
+
+    // Rooks
+    sprintf( path, "/local_home/dataset/birdies/birdgen/output/label/rk/sequence_%d_cam_%d_frame_%d_rk.png", seq, cam, frame);
+    lb = load_image_16(path, 1);
+    for(j = 0; j < h; ++j)
+        memcpy( gt.data + 2*w*h + j*w, lb.data + (j+dy)*lb.w + dx, w*sizeof(float));
+    free_image( lb);
 
     // depth
     sprintf( path, "/local_home/dataset/birdies/birdgen/output/label/pz/sequence_%d_cam_%d_frame_%d_dp.png", seq, cam, frame);
     lb = load_image_16(path, 1);
-    image sized = crop_image( lb, dx, dy, w, h);
-    memcpy( gt.data + 3*w*h, sized.data, w*h*sizeof( float));
+    for(j = 0; j < h; ++j)
+        memcpy( gt.data + 5*w*h + j*w, lb.data + (j+dy)*lb.w + dx, w*sizeof(float));
     free_image( lb);
-    free_image( sized);
 
-    image mask = get_image_layer( gt, 0);
+    // Reduced channels
+   // image mask = get_image_layer( gt, 0);
 
-    // Qx
-    sprintf( path, "/local_home/dataset/birdies/birdgen/output/label/qx/sequence_%d_cam_%d_frame_%d_qx.png", seq, cam, frame);
-    lb = load_image_16_symmetric(path, 1);
-    sized = crop_image( lb, dx, dy, w, h);
-    image masked = mask_images( sized, mask);
-    memcpy( gt.data + 6*w*h, masked.data, w*h*sizeof( float));
-    free_image( lb);
-    free_image( sized);
-    free_image( masked);
+   // // Qx
+   // sprintf( path, "/local_home/dataset/birdies/birdgen/output/label/qx/sequence_%d_cam_%d_frame_%d_qx.png", seq, cam, frame);
+   // lb = load_image_16_symmetric(path, 1);
+   // sized = crop_image( lb, dx, dy, w, h);
+   // image masked = mask_images( sized, mask);
+   // memcpy( gt.data + 6*w*h, masked.data, w*h*sizeof( float));
+   // free_image( lb);
+   // free_image( sized);
+   // free_image( masked);
 
-    // Qy
-    sprintf( path, "/local_home/dataset/birdies/birdgen/output/label/qy/sequence_%d_cam_%d_frame_%d_qy.png", seq, cam, frame);
-    lb = load_image_16_symmetric(path, 1);
-    sized = crop_image( lb, dx, dy, w, h);
-    masked = mask_images( sized, mask);
-    memcpy( gt.data + 7*w*h, masked.data, w*h*sizeof( float));
-    free_image( lb);
-    free_image( sized);
-    free_image( masked);
+   // // Qy
+   // sprintf( path, "/local_home/dataset/birdies/birdgen/output/label/qy/sequence_%d_cam_%d_frame_%d_qy.png", seq, cam, frame);
+   // lb = load_image_16_symmetric(path, 1);
+   // sized = crop_image( lb, dx, dy, w, h);
+   // masked = mask_images( sized, mask);
+   // memcpy( gt.data + 7*w*h, masked.data, w*h*sizeof( float));
+   // free_image( lb);
+   // free_image( sized);
+   // free_image( masked);
 
-    // Qz
-    sprintf( path, "/local_home/dataset/birdies/birdgen/output/label/qz/sequence_%d_cam_%d_frame_%d_qz.png", seq, cam, frame);
-    lb = load_image_16_symmetric(path, 1);
-    sized = crop_image( lb, dx, dy, w, h);
-    masked = mask_images( sized, mask);
-    memcpy( gt.data + 8*w*h, masked.data, w*h*sizeof( float));
-    free_image( lb);
-    free_image( sized);
-    free_image( masked);
+   // // Qz
+   // sprintf( path, "/local_home/dataset/birdies/birdgen/output/label/qz/sequence_%d_cam_%d_frame_%d_qz.png", seq, cam, frame);
+   // lb = load_image_16_symmetric(path, 1);
+   // sized = crop_image( lb, dx, dy, w, h);
+   // masked = mask_images( sized, mask);
+   // memcpy( gt.data + 8*w*h, masked.data, w*h*sizeof( float));
+   // free_image( lb);
+   // free_image( sized);
+   // free_image( masked);
 
-    // Qw
-    sprintf( path, "/local_home/dataset/birdies/birdgen/output/label/qw/sequence_%d_cam_%d_frame_%d_qw.png", seq, cam, frame);
-    lb = load_image_16_symmetric(path, 1);
-    sized = crop_image( lb, dx, dy, w, h);
-    masked = mask_images( sized, mask);
-    memcpy( gt.data + 9*w*h, masked.data, w*h*sizeof( float));
-    free_image( lb);
-    free_image( sized);
-    free_image( mask);
-    free_image( masked);
+   // // Qw
+   // sprintf( path, "/local_home/dataset/birdies/birdgen/output/label/qw/sequence_%d_cam_%d_frame_%d_qw.png", seq, cam, frame);
+   // lb = load_image_16_symmetric(path, 1);
+   // sized = crop_image( lb, dx, dy, w, h);
+   // masked = mask_images( sized, mask);
+   // memcpy( gt.data + 9*w*h, masked.data, w*h*sizeof( float));
+   // free_image( lb);
+   // free_image( sized);
+   // free_image( mask);
+   // free_image( masked);
 
     return gt;
 }

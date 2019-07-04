@@ -36,6 +36,8 @@
 #include "softmax_layer.h"
 #include "lstm_layer.h"
 #include "birdies_layer.h"
+#include "birdchan_layer.h"
+#include "blassify_layer.h"
 #include "utils.h"
 
 typedef struct{
@@ -85,6 +87,8 @@ LAYER_TYPE string_to_layer_type(char * type)
     if (strcmp(type, "[route]")==0) return ROUTE;
     if (strcmp(type, "[upsample]")==0) return UPSAMPLE;
     if (strcmp(type, "[bird]")==0) return BIRDIES;
+    if (strcmp(type, "[blassify]")==0) return BLASSIFY;
+    if (strcmp(type, "[birdslice]")==0) return BIRDCHAN;
     return BLANK;
 }
 
@@ -355,6 +359,42 @@ layer parse_iseg(list *options, size_params params)
 layer parse_birdies(list *options, size_params params)
 {
     layer l = make_birdies_layer(params.batch, params.w, params.h);
+    assert(l.outputs == params.inputs);
+    return l;
+}
+
+layer parse_blassify(list *options, size_params params)
+{
+    char *activation_s = option_find_str(options, "activation", "logistic");
+    ACTIVATION activation = get_activation(activation_s);
+    layer l = make_blassify_layer(params.batch, params.w, params.h, activation);
+    assert(l.outputs == params.inputs);
+    return l;
+}
+
+layer parse_birdslice(list *options, size_params params)
+{
+    char *activation_s = option_find_str(options, "activation", "logistic");
+    ACTIVATION activation = get_activation(activation_s);
+    char *c = option_find(options, "channels");
+    int len = strlen(c);
+    if(!c) error("Bird Slice Layer must specify input channels");
+    int n = 1;
+    int i;
+    for(i = 0; i < len; ++i){
+        if (c[i] == ',') ++n;
+    }
+
+    int *channels = calloc(n, sizeof(int));
+    for(i = 0; i < n; ++i){
+        int index = atoi(c);
+        c = strchr(c, ',')+1;
+        channels[i] = index;
+    }
+    char *cost_type = option_find_str(options, "cost", "sse");
+    COST_TYPE cost = get_cost_type(cost_type);
+    float scale = option_find_float_quiet(options, "scale", 1.0);
+    layer l = make_birdchan_layer(params.batch, params.w, params.h, n, channels, scale, activation, cost);
     assert(l.outputs == params.inputs);
     return l;
 }
@@ -816,6 +856,10 @@ network *parse_network_cfg(char *filename)
             l = parse_iseg(options, params);
         }else if(lt == BIRDIES){
             l = parse_birdies(options, params);
+        }else if(lt == BLASSIFY){
+            l = parse_blassify(options, params);
+        }else if(lt == BIRDCHAN){
+            l = parse_birdslice(options, params);
         }else if(lt == DETECTION){
             l = parse_detection(options, params);
         }else if(lt == SOFTMAX){

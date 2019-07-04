@@ -1,6 +1,7 @@
 #include "darknet.h"
 #include <sys/time.h>
 #include <assert.h>
+#include <blas.h>
 #include "image.h"
 
 static float get_pixel(image m, int x, int y, int c)
@@ -19,16 +20,17 @@ void train_segmenter(char *datacfg, char *cfgfile, char *weightfile, int *gpus, 
 {
     int i;
 
-    char *train_csv_name = "train.csv";
-
-    FILE *train_csv_file = fopen(train_csv_name,"w+");
-    fprintf(train_csv_file,"Batche,Epoch,Loss,Avg,Rate\n");
-
     float avg_loss = -1;
     char *base = basecfg(cfgfile);
     printf("%s\n", base);
     printf("%d\n", ngpus);
     network **nets = calloc(ngpus, sizeof(network*));
+    char train_csv_name[256];
+    sprintf( train_csv_name, "%s_train.csv", base);
+    FILE *train_csv_file = fopen(train_csv_name,"a");
+    // Reduced channels
+    //fprintf(train_csv_file,"Birdness,Jackdaw,Rook,Dx,Dy,Dz,Qx,Qy,Qz,Qw,Sin(f),Cos(f),Batche,Epoch,Loss,Avg,Rate\n");
+    fprintf(train_csv_file,"Birdness,Jackdaw,Rook,Dx,Dy,Dz,Batche,Epoch,Loss,Avg,Rate\n");
 
     srand(time(0));
     int seed = rand();
@@ -43,6 +45,7 @@ void train_segmenter(char *datacfg, char *cfgfile, char *weightfile, int *gpus, 
     srand(time(0));
     network *net = nets[0];
     image pred = get_network_image(net);
+    net->log = train_csv_file;
 
     int div = net->w/pred.w;
     //printf("Div = %d, %d, %d\n", div, net->w, pred.w); 
@@ -113,7 +116,7 @@ void train_segmenter(char *datacfg, char *cfgfile, char *weightfile, int *gpus, 
         if(avg_loss == -1) avg_loss = loss;
         avg_loss = avg_loss*.9 + loss*.1;
         printf("%ld, %.3f: %f, %f avg, %f rate, %lf seconds, %ld images\n", get_current_batch(net), (float)(*net->seen)/N, loss, avg_loss, get_current_rate(net), what_time_is_it_now()-time, *net->seen);
-        fprintf( train_csv_file, "%d,%f,%f,%f,%g\n", get_current_batch(net), (float)(*net->seen)/N, loss, avg_loss, get_current_rate(net));
+        fprintf( train_csv_file, ",%d,%f,%f,%f,%g\n", get_current_batch(net), (float)(*net->seen)/N, loss, avg_loss, get_current_rate(net));
         fflush( train_csv_file);
         if(*net->seen/N > epoch){
             epoch = *net->seen/N;
@@ -122,7 +125,9 @@ void train_segmenter(char *datacfg, char *cfgfile, char *weightfile, int *gpus, 
             save_weights(net, buff);
         }
         if( get_current_batch(net)%10 == 0){
-            image trth = float_to_image(net->w/div, net->h/div, 12, train.y.vals[net->batch*(net->subdivisions-1)]);
+            // Reduced channels
+            //image trth = float_to_image(net->w/div, net->h/div, 12, train.y.vals[net->batch*(net->subdivisions-1)]);
+            image trth = float_to_image(net->w/div, net->h/div, 6, train.y.vals[net->batch*(net->subdivisions-1)]);
            // image tr = collapse_birds_layers( trth, 1);
            // save_image_16( tr, "truth");
            // image im = collapse_image_layers( float_to_image(net->w, net->h, 9, train.X.vals[net->batch*(net->subdivisions-1)]), 1);
@@ -136,11 +141,15 @@ void train_segmenter(char *datacfg, char *cfgfile, char *weightfile, int *gpus, 
            // save_image_16(diff, "diff");
             //------------------------
             //for debug:
-            image spc = make_image( trth.w*3+6, trth.h*12+33, 3);
+            // Reduced channels
+            //image spc = make_image( trth.w*3+6, trth.h*12+33, 3);
+            image spc = make_image( trth.w*3+6, trth.h*6+15, 3);
             fill_image( spc, 1.);
             image tmp = make_empty_image(0,0,0);
             int ind_spc;
-            for( ind_spc = 0; ind_spc <12; ind_spc++)
+            // Reduced channels
+            //for( ind_spc = 0; ind_spc <12; ind_spc++)
+            for( ind_spc = 0; ind_spc <6; ind_spc++)
             {
                 image t = get_image_layer( trth, ind_spc);
                 tmp = bird_to_rgb( t, ind_spc);
@@ -153,7 +162,9 @@ void train_segmenter(char *datacfg, char *cfgfile, char *weightfile, int *gpus, 
             place_image( tmp, pred.w, pred.h,  pred.w+3, 0, spc);
             place_image( tmp, pred.w, pred.h,  2*(pred.w+3), 0, spc);
             free_image( tmp);
-            for( ind_spc = 1; ind_spc <12; ind_spc++)
+            // Reduced channels
+            //for( ind_spc = 1; ind_spc <12; ind_spc++)
+            for( ind_spc = 1; ind_spc <6; ind_spc++)
             {
                 image t = get_image_layer( pred, ind_spc);
                 tmp = bird_to_rgb( t, ind_spc);
@@ -166,7 +177,7 @@ void train_segmenter(char *datacfg, char *cfgfile, char *weightfile, int *gpus, 
                 free_image( tmp);
             }
             char f[128];
-            sprintf( f, "./relinear/%d", get_current_batch(net)/10);
+            sprintf( f, "./fatBranch/%d", get_current_batch(net)/10);
             save_image(spc, f);
 
             //-------------------------------
