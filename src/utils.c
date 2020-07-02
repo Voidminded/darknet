@@ -175,6 +175,14 @@ char *find_char_arg(int argc, char **argv, char *arg, char *def)
     return def;
 }
 
+char *basedir(char *file)
+{
+    char *last;
+    char *c = copy_string( file);
+    last = strrchr(c, '/');
+    if( last) *last = 0;
+    return c;
+}
 
 char *basecfg(char *cfgfile)
 {

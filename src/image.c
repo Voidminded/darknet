@@ -912,9 +912,27 @@ void place_image(image im, int w, int h, int dx, int dy, image canvas)
     }
 }
 
+void merge_images(image im, int w, int h, int dx, int dy, image canvas)
+{
+    int x, y, c;
+    for(c = 0; c < im.c; ++c){
+        for(y = 0; y < h; ++y){
+            for(x = 0; x < w; ++x){
+                float rx = ((float)x / w) * im.w;
+                float ry = ((float)y / h) * im.h;
+                float val = bilinear_interpolate(im, rx, ry, c);
+                if( get_pixel( canvas, x + dx, y + dy, c) < 10e-9)
+                    set_pixel(canvas, x + dx, y + dy, c, val);
+                else
+                    set_pixel(canvas, x + dx, y + dy, c, 0.5*(val+get_pixel( canvas, x + dx, y + dy, c)));
+            }
+        }
+    }
+}
+
 image center_crop_image(image im, int w, int h)
 {
-    int m = (im.w < im.h) ? im.w : im.h;   
+    int m = (im.w < im.h) ? im.w : im.h;
     image c = crop_image(im, (im.w - m) / 2, (im.h - m)/2, m, m);
     image r = resize_image(c, w, h);
     free_image(c);
@@ -1152,8 +1170,11 @@ image crop_seg_gt_8dof( int dx, int dy, int w, int h, int* valid, int seq, int c
                 if( valX > 1e-9 || valY > 1e-9)
                 {
                     float dist = sqrt( pow( c-valX,2) + pow( r-valY, 2));
-                    set_pixel(gt, i, j, 3, (valX-c)/dist);
-                    set_pixel(gt, i, j, 4, (valY-r)/dist);
+                    if( dist>0.3)
+                    {
+                      set_pixel(gt, i, j, 3, (valX-c)/dist);
+                      set_pixel(gt, i, j, 4, (valY-r)/dist);
+                    }
                 }
     // Reduced channels
   //              float wb = TWO_PI*get_pixel(lbWB, c, r, 0);
@@ -1617,6 +1638,14 @@ image threshold_image(image im, float thresh)
     return t;
 }
 
+void threshold(image *im, float thresh)
+{
+    int i;
+    for(i = 0; i < im->w*im->h*im->c; ++i){
+        im->data[i] = im->data[i]>thresh ? 1 : 0;
+    }
+}
+
 image blend_image(image fore, image back, float alpha)
 {
     assert(fore.w == back.w && fore.h == back.h && fore.c == back.c);
@@ -2062,6 +2091,112 @@ void show_images(image *ims, int n, char *window)
     save_image(m, window);
     show_image(m, window, 1);
     free_image(m);
+}
+
+void dilate_image( image *im, int kernel)
+{
+  image dilated = make_image( im->w, im->h, 1);
+  int ii, jj, i, j;
+  int half_kernel = kernel/2;
+  for( j = 0; j < im->h-kernel; ++j)
+    for( i = 0; i < im->w-kernel; ++i)
+    {
+      float max = -1.;
+      for( ii = i; ii < i+kernel; ++ii)
+        for( jj = j; jj < j+kernel; ++jj)
+          if( im->data[ ii+jj*im->w] > max)
+            max = im->data[ ii+jj*im->w];
+      ii = i + half_kernel;
+      jj = j + half_kernel;
+      dilated.data[ ii+jj*im->w] = max;
+    }
+  copy_image_into( dilated, *im);
+  free_image( dilated);
+}
+
+image hough_vote( image im, int x_chan, int y_chan, image mask, int do_nms, char* name)
+{
+  image vote = make_image( im.w, im.h, 1);
+  int i,j;
+  float x,y, h, w, len;
+  for( j=0; j < vote.h; ++j)
+    for( i = 0; i < vote.w; ++i)
+    {
+      x = get_pixel( im, i, j, x_chan);
+      y = get_pixel( im, i, j, y_chan);
+      len = x*x+y*y;
+      if( len > 0.1)
+      {
+        x /= len;
+        y /= len;
+        h = j;
+        w = i;;
+        while( h > 0 && h < vote.h && w > 0 && w < vote.w)
+        {
+          vote.data[ (int) fmin(round(h),vote.h-1)*vote.w + (int) fmin(round(w), vote.w-1)] += 0.1;
+          w += x;
+          h += y;
+        }
+      }
+    }
+  mul_cpu( vote.w*vote.h, mask.data, 1, vote.data, 1);
+  if( name)
+  {
+    image tmp = copy_image( vote);
+    normalize_image( tmp);
+    save_image( tmp, name);
+    free_image(tmp);
+  }
+  image sum = make_image( im.w, im.h, 1);
+  for( i = 0; i < im.w*im.h; ++i)
+    if( fabs(im.data[ x_chan*im.w*im.h + i]) < 0.5 && fabs(im.data[ y_chan*im.w*im.h + i]) < 0.5)
+      sum.data[i] = mask.data[i] * fmax( 1, 1 - (fabs(fabs(im.data[ x_chan*im.w*im.h + i]) - fabs(im.data[ y_chan*im.w*im.h + i])) + fabs( fabs(im.data[ x_chan*im.w*im.h + i]) + fabs(im.data[ y_chan*im.w*im.h + i]))));
+  normalize_image(sum);
+  dilate_image( &sum, 3);
+//  save_image( sum,"test_sum");
+  if( do_nms)
+  {
+    image nmsed = make_image( im.w, im.h, 1);
+    float thresh = 0.9;
+    int ii, jj, nms_size = 15;
+    int half_nms = nms_size/2;
+    for( j = 0; j < vote.h-nms_size; ++j)
+      for( i = 0; i < vote.w-nms_size; ++i)
+      {
+        float max = -1.;
+        for( ii = i; ii < i+nms_size; ++ii)
+          for( jj = j; jj < j+nms_size; ++jj)
+            if( vote.data[ ii+jj*vote.w] > max)
+              max = vote.data[ ii+jj*vote.w];
+        ii = i + half_nms;
+        jj = j + half_nms;
+        if( fabs(vote.data[ ii+jj*vote.w] - max) <= 1e-9 && vote.data[ ii+jj*vote.w] > thresh)
+          nmsed.data[ ii+jj*vote.w] = vote.data[ ii+jj*vote.w];
+      }
+    copy_image_into( nmsed, vote);
+    free_image( nmsed);
+  }
+  normalize_image(vote);
+  dilate_image( &vote, 5);
+  //save_image( vote,"test_vote");
+  mul_cpu( vote.w*vote.h, sum.data, 1, vote.data, 1);
+  free_image( sum);
+  return vote;
+}
+
+image bird_species( image pred, int jd, int rk, image mask)
+{
+  int i;
+  image spcs = make_image( pred.w, pred.h, 3);
+  for( i = 0; i < mask.w*mask.h; ++i)
+  {
+    if( mask.data[i] > 0.3)
+    {
+        spcs.data[ i] = pred.data[ pred.w*pred.h*jd+i];
+        spcs.data[ 2*spcs.w*spcs.h+i] = pred.data[ pred.w*pred.h*rk+i];
+    }
+  }
+  return spcs;
 }
 
 void free_image(image m)

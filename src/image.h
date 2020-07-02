@@ -40,6 +40,7 @@ image resize_max(image im, int max);
 void translate_image(image m, float s);
 void embed_image(image source, image dest, int dx, int dy);
 void place_image(image im, int w, int h, int dx, int dy, image canvas);
+void merge_images(image im, int w, int h, int dx, int dy, image canvas);
 void saturate_image(image im, float sat);
 void exposure_image(image im, float sat);
 void distort_image(image im, float hue, float sat, float val);
@@ -48,6 +49,7 @@ void rgb_to_hsv(image im);
 void hsv_to_rgb(image im);
 void yuv_to_rgb(image im);
 void rgb_to_yuv(image im);
+void threshold(image *im, float thresh);
 
 
 image collapse_image_layers(image source, int border);
@@ -67,6 +69,8 @@ image make_empty_image(int w, int h, int c);
 void copy_image_into(image src, image dest);
 
 image get_image_layer(image m, int l);
+image hough_vote( image im, int x_chan, int y_chan, image mask, int do_nms, char* name);
+image bird_species( image pred, int jd, int rk, image mask);
 
 #endif
 
