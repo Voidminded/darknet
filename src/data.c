@@ -885,8 +885,9 @@ data load_data_seg_conf(int n, char **paths, int m, int w, int h, int classes, i
 data load_data_seg_seq(int n, int m, int w, int h, int classes, int min, int max, float angle, float aspect, float hue, float saturation, float exposure, int div)
 {
     int cams = 4;
-    int seqs = 1200;
+    int seqs = 395;
     int frames = 51;
+    int hdds = 3;
     int i,j;
     data d = {0};
     d.shallow = 0;
@@ -901,7 +902,7 @@ data load_data_seg_seq(int n, int m, int w, int h, int classes, int min, int max
     d.y.rows = n;
     // Reduced channels
     //d.y.cols = h*w*12;
-    d.y.cols = h*w*6;
+    d.y.cols = h*w*3;
     d.y.vals = calloc(d.X.rows, sizeof(float*));
 
     int valid;
@@ -914,6 +915,7 @@ data load_data_seg_seq(int n, int m, int w, int h, int classes, int min, int max
             int c = rand()%cams;
             int s = rand()%seqs;
             int f = rand()%frames + 9;
+            int hdd = rand()%hdds;
             int dx = rand_int(0, 1920 - w);
             int dy = rand_int(0, 1080 - h);
             //int c = 0;
@@ -924,35 +926,33 @@ data load_data_seg_seq(int n, int m, int w, int h, int classes, int min, int max
             float dhue = rand_uniform(-hue, hue);
             float dsat = rand_scale(saturation);
             float dexp = rand_scale(exposure);
-            for( j = 0; j < 9; j++){
-                if( j == 0){
-                    image sized_m = crop_seg_gt_8dof( dx, dy, w, h, &valid, s, c, f-j);
-                    //image truth_debug = collapse_birds_layers( sized_m, 0.5);
-                    //save_image_16( truth_debug, "truth_debugged");
-                    //free_image( truth_debug);
-                    if( valid)
-                        d.y.vals[i] = sized_m.data;
-                    else
-                    {
-                        free_image( sized_m);
-                        break;
-                    }
+            //image sized_m = crop_seg_gt_8dof( dx, dy, w, h, &valid, s, c, f-4);
+            image sized_m = crop_seg_gt_8dof_hdds( dx, dy, w, h, &valid, s, c, f-4, hdd);
+            if( valid){
+                d.y.vals[i] = sized_m.data;
+                for( j = 0; j < 9; j++){
+                    char path[256];
+                    if( hdd == 0 )
+                        sprintf( path, "/sata0/dataset/birdies/image/sequence_%d_cam_%d_frame_%d.png", s, c, f-j);
+                    else if( hdd == 1)
+                        sprintf( path, "/sata1/dataset/birdies/image/sequence_%d_cam_%d_frame_%d.png", s, c, f-j);
+                    else if( hdd = 2)
+                        sprintf( path, "/local_home/dataset/birdies/birdgen/output/image/sequence_%d_cam_%d_frame_%d.png", s, c, f-j);
+                    orig = load_image_color( path, 0, 0);
+
+                    sized = crop_image(orig, dx, dy, w, h);
+
+                    distort_image(sized, dhue, dsat, dexp);
+                    image gray = grayscale_image( sized);
+                    //show_image( sized, "img", 1);
+                    memcpy( input.data + j*h*w, gray.data, h*w*sizeof( float));
+                    free_image(sized);
+                    free_image(orig);
+                    free_image(gray);
                 }
-                char path[256];
-                sprintf( path, "/local_home/dataset/birdies/birdgen/output/image/sequence_%d_cam_%d_frame_%d.png", s, c, f-j);
-                orig = load_image_color( path, 0, 0);
-
-                sized = crop_image(orig, dx, dy, w, h);
-
-                distort_image(sized, dhue, dsat, dexp);
-                image gray = grayscale_image( sized);
-                //show_image( sized, "img", 1);
-                memcpy( input.data + j*h*w, gray.data, h*w*sizeof( float));
-                free_image(sized);
-                free_image(orig);
-                free_image(gray);
             }
-            //printf( "/local_home/dataset/birdies/birdgen/output/image/sequence_%d_cam_%d_frame_%d.png\n", s, c, f);
+            else
+                free_image( sized_m);
         }
         d.X.vals[i] = input.data;
 

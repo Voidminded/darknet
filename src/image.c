@@ -1121,6 +1121,166 @@ image crop_seg_gt_conf(image im, int dx, int dy, int w, int h, int* valid)
     return cropped;
 }
 
+image crop_seg_gt_8dof_hdds( int dx, int dy, int w, int h, int* valid, int seq, int cam, int frame, int hdd)
+{
+    int i, j;
+    // for full 8 dof
+    // Reduced channels
+    //image gt = make_image(w, h, 12);
+    image gt = make_image(w, h, 3);
+    char path[256];
+
+    // Reduced channels
+    // X,Y, birdness, Wing beaats phase
+    if( hdd == 0 )
+        sprintf( path, "/sata0/dataset/birdies/label/id/sequence_%d_cam_%d_frame_%d_id.png", seq, cam, frame);
+    else if( hdd == 1)
+        sprintf( path, "/sata1/dataset/birdies/label/id/sequence_%d_cam_%d_frame_%d_id.png", seq, cam, frame);
+    else if( hdd = 2)
+        sprintf( path, "/local_home/dataset/birdies/birdgen/output/label/id/sequence_%d_cam_%d_frame_%d_id.png", seq, cam, frame);
+    image lb = load_image_16(path, 1);
+    float *empty_w;
+    empty_w = calloc( w, sizeof(float));
+    for(j = 0; j < h; ++j){
+        *valid = memcmp( empty_w, lb.data+(j+dy)*lb.w+dx, w*sizeof(float));
+        if( *valid != 0)
+            break;
+    }
+    if( *valid == 0)
+    {
+        free_image( lb);
+        free( empty_w);
+        return gt;
+    }
+    free( empty_w);
+    image sized = crop_image( lb, dx, dy, w, h);
+    threshold( &sized, 1e-9);
+    memcpy( gt.data, sized.data, w*h*sizeof( float));
+    free_image( sized);
+   // sprintf( path, "/local_home/dataset/birdies/birdgen/output/label/px/sequence_%d_cam_%d_frame_%d_px.png", seq, cam, frame);
+   // image lbX = load_image_16(path, 1);
+   // sprintf( path, "/local_home/dataset/birdies/birdgen/output/label/py/sequence_%d_cam_%d_frame_%d_py.png", seq, cam, frame);
+   // image lbY = load_image_16(path, 1);
+    // Reduced channels
+  //  sprintf( path, "/local_home/dataset/birdies/birdgen/output/label/fp/sequence_%d_cam_%d_frame_%d_fp.png", seq, cam, frame);
+  //  image lbWB = load_image_16(path, 1);
+ //   for(j = 0; j < h; ++j){
+ //       for(i = 0; i < w; ++i){
+ //           int r = j + dy;
+ //           int c = i + dx;
+ //           float valX = 0, valY = 0, val = 0;
+ //           r = constrain_int(r, 0, lb.h-1);
+ //           c = constrain_int(c, 0, lb.w-1);
+ //           val = get_pixel(lb, c, r, 0);
+ //           if( val > 1e-9)
+ //           {
+ //               set_pixel(gt, i, j, 0, 1.);
+ //               valX = get_pixel(lbX, c, r, 0)*lbX.w;
+ //               valY = get_pixel(lbY, c, r, 0)*lbY.h;
+ //               if( valX > 1e-9 || valY > 1e-9)
+ //               {
+ //                   float dist = sqrt( pow( c-valX,2) + pow( r-valY, 2));
+ //                   if( dist>0.3)
+ //                   {
+ //                     set_pixel(gt, i, j, 3, (valX-c)/dist);
+ //                     set_pixel(gt, i, j, 4, (valY-r)/dist);
+ //                   }
+ //               }
+    // Reduced channels
+  //              float wb = TWO_PI*get_pixel(lbWB, c, r, 0);
+  //              set_pixel(gt, i, j, 10, sin(wb));
+  //              set_pixel(gt, i, j, 11, cos(wb));
+   //         }
+   //     }
+   // }
+   // free_image( lbX);
+   // free_image( lbY);
+    free_image( lb);
+    // Reduced channels
+  //  free_image( lbWB);
+
+    // Jackdaw
+    if( hdd == 0 )
+        sprintf( path, "/sata0/dataset/birdies/label/jd/sequence_%d_cam_%d_frame_%d_jd.png", seq, cam, frame);
+    else if( hdd == 1)
+        sprintf( path, "/sata1/dataset/birdies/label/jd/sequence_%d_cam_%d_frame_%d_jd.png", seq, cam, frame);
+    else if( hdd = 2)
+        sprintf( path, "/local_home/dataset/birdies/birdgen/output/label/jd/sequence_%d_cam_%d_frame_%d_jd.png", seq, cam, frame);
+    lb = load_image_16(path, 1);
+    sized = crop_image( lb, dx, dy, w, h);
+    for(i = 0; i < sized.w*sized.h*sized.c; ++i)
+        sized.data[i] = sized.data[i]>0.3 ? 1 : 0;
+    memcpy( gt.data + w*h, sized.data, w*h*sizeof( float));
+    free_image( lb);
+    free_image( sized);
+
+    // Rooks
+    if( hdd == 0 )
+        sprintf( path, "/sata0/dataset/birdies/label/rk/sequence_%d_cam_%d_frame_%d_rk.png", seq, cam, frame);
+    else if( hdd == 1)
+        sprintf( path, "/sata1/dataset/birdies/label/rk/sequence_%d_cam_%d_frame_%d_rk.png", seq, cam, frame);
+    else if( hdd = 2)
+        sprintf( path, "/local_home/dataset/birdies/birdgen/output/label/rk/sequence_%d_cam_%d_frame_%d_rk.png", seq, cam, frame);
+    lb = load_image_16(path, 1);
+    for(j = 0; j < h; ++j)
+        memcpy( gt.data + 2*w*h + j*w, lb.data + (j+dy)*lb.w + dx, w*sizeof(float));
+    free_image( lb);
+
+    // Reduced channels
+    // depth
+   // sprintf( path, "/local_home/dataset/birdies/birdgen/output/label/pz/sequence_%d_cam_%d_frame_%d_dp.png", seq, cam, frame);
+   // lb = load_image_16(path, 1);
+   // for(j = 0; j < h; ++j)
+   //     memcpy( gt.data + 5*w*h + j*w, lb.data + (j+dy)*lb.w + dx, w*sizeof(float));
+   // free_image( lb);
+
+    // Reduced channels
+   // image mask = get_image_layer( gt, 0);
+
+   // // Qx
+   // sprintf( path, "/local_home/dataset/birdies/birdgen/output/label/qx/sequence_%d_cam_%d_frame_%d_qx.png", seq, cam, frame);
+   // lb = load_image_16_symmetric(path, 1);
+   // sized = crop_image( lb, dx, dy, w, h);
+   // image masked = mask_images( sized, mask);
+   // memcpy( gt.data + 6*w*h, masked.data, w*h*sizeof( float));
+   // free_image( lb);
+   // free_image( sized);
+   // free_image( masked);
+
+   // // Qy
+   // sprintf( path, "/local_home/dataset/birdies/birdgen/output/label/qy/sequence_%d_cam_%d_frame_%d_qy.png", seq, cam, frame);
+   // lb = load_image_16_symmetric(path, 1);
+   // sized = crop_image( lb, dx, dy, w, h);
+   // masked = mask_images( sized, mask);
+   // memcpy( gt.data + 7*w*h, masked.data, w*h*sizeof( float));
+   // free_image( lb);
+   // free_image( sized);
+   // free_image( masked);
+
+   // // Qz
+   // sprintf( path, "/local_home/dataset/birdies/birdgen/output/label/qz/sequence_%d_cam_%d_frame_%d_qz.png", seq, cam, frame);
+   // lb = load_image_16_symmetric(path, 1);
+   // sized = crop_image( lb, dx, dy, w, h);
+   // masked = mask_images( sized, mask);
+   // memcpy( gt.data + 8*w*h, masked.data, w*h*sizeof( float));
+   // free_image( lb);
+   // free_image( sized);
+   // free_image( masked);
+
+   // // Qw
+   // sprintf( path, "/local_home/dataset/birdies/birdgen/output/label/qw/sequence_%d_cam_%d_frame_%d_qw.png", seq, cam, frame);
+   // lb = load_image_16_symmetric(path, 1);
+   // sized = crop_image( lb, dx, dy, w, h);
+   // masked = mask_images( sized, mask);
+   // memcpy( gt.data + 9*w*h, masked.data, w*h*sizeof( float));
+   // free_image( lb);
+   // free_image( sized);
+   // free_image( mask);
+   // free_image( masked);
+
+    return gt;
+}
+
 image crop_seg_gt_8dof( int dx, int dy, int w, int h, int* valid, int seq, int cam, int frame)
 {
     int i, j;

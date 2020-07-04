@@ -16,10 +16,191 @@ static void set_pixel(image m, int x, int y, int c, float val)
     m.data[c*m.h*m.w + y*m.w + x] = val;
 }
 
+void* validate_thread(void* arg)//network* net, char *filename, FILE* valid_csv_file)
+{
+  int* batch_number = (int *) arg;
+  cuda_set_device(0);
+  char* cfg[256];
+  sprintf( cfg, "spicies.cfg");
+  char* weights[256];
+  sprintf( weights, "backup/spicies_%d.weights", *batch_number);
+  network *net = load_network(cfg, weights, 0);
+  set_batch_network(net, 1);
+  image pred = get_network_image(net);
+
+  char filename[256];
+  sprintf( filename, "/local_home/dataset/birdies/birdgen/output/valid.txt");
+
+  char valid_csv_name[256];
+  sprintf( valid_csv_name, "validation.csv");
+  FILE *valid_csv_file = fopen(valid_csv_name,"a");
+
+  list *dlist = get_paths( filename);
+  char** dirs = (char **)list_to_array(dlist);
+  int d,n,m, w = 1920, h = 1024; //w = 2048, h = 2048;// w = 1920, h = 1080;
+  int num_files = 0;
+  double bird_err = 0, jd_err = 0, rk_err = 0;
+  double time = what_time_is_it_now();
+  for( d = 0; d < dlist->size; ++d)
+  {
+    char buff[256];
+    char *input = buff;
+    list *plist = get_paths(dirs[d]);
+    char **paths = (char **)list_to_array(plist);
+    image in = make_image( net->w, net->h, net->c);
+    image result = make_image( w, h, 1);
+    image jackdaws = make_image( w, h, 1);
+    image rooks = make_image( w, h, 1);
+    image debug = make_image( w*3+6, h*3+6, 1);
+    int num_frames = 9;
+    image im[ num_frames];
+    for( m = 0; m < num_frames; ++m)
+      im[m] = make_empty_image(0,0,0);
+    image sized = make_empty_image( 0,0,0);
+    image gray = make_empty_image( 0,0,0);
+    for( n=8; n < plist->size; ++n)
+    //for( n=17; n < plist->size; ++n)
+    {
+      fill_image( result, 0.);
+      fill_image( jackdaws, 0.);
+      fill_image( rooks, 0.);
+      int oi ,oj;
+      for( m = 0; m < num_frames; ++m)
+      {
+        strncpy(input, paths[n-m], 256);
+        im[m] = load_image_color(input, 0, 0);
+      }
+      for( oi = 0; oi < 2; ++oi)
+      {
+        for( oj = 0; oj < 1; oj++)
+        {
+         int dx, dy;
+          switch( oi)
+          {
+            case 0:
+              dx = 0;
+              break;
+
+            case 1:
+              dx = 896;
+              break;
+
+        //    case 2:
+        //      dx = 960;
+        //      break;
+          }
+          switch( oj)
+          {
+            case 0:
+              dy = 0;
+              break;
+
+         //   case 1:
+         //     dy = 120;
+         //     break;
+          }
+          for( m = 0; m < num_frames; ++m)
+          //for( m = 0; m < 18; m+=2)
+          {
+            sized = crop_image(im[m], dx, dy, net->w, net->h);
+            gray = grayscale_image( sized);
+            memcpy( in.data + m*in.h*in.w, gray.data, gray.h*gray.w*sizeof( float));
+            //memcpy( in.data + m*in.h*in.w*3, sized.data, 3*sized.h*sized.w*sizeof( float));
+            //memcpy( in.data + (m/2)*in.h*in.w*3, sized.data, 3*sized.h*sized.w*sizeof( float));
+            free_image( sized);
+            free_image( gray);
+          }
+          float *X = in.data;
+          network_predict(net, X);
+          int ind_spc;
+          image msk = get_image_layer( pred, 0);
+          merge_images( msk, pred.w, pred.h,  dx, dy, result);
+          threshold( &msk, 0.15);
+          image tmp = get_image_layer( pred, 1);
+          mul_cpu( pred.w*pred.h, msk.data, 1, tmp.data, 1);
+          merge_images( tmp, pred.w, pred.h, dx, dy, jackdaws);
+          free_image(tmp);
+          tmp = get_image_layer( pred, 2);
+          mul_cpu( pred.w*pred.h, msk.data, 1, tmp.data, 1);
+          merge_images( tmp, pred.w, pred.h, dx, dy, rooks);
+          free_image(tmp);
+          free_image(msk);
+        }
+      }
+      num_files++;
+      char labelpath[256];
+      strncpy( labelpath ,paths[n-4], 256);
+      find_replace(labelpath, "image", "label/id", labelpath);
+      find_replace(labelpath, ".png", "_id.png", labelpath);
+      image orig = load_image_16( labelpath, 1);
+      image bird_label = crop_image(orig, 0, 0, w, h);
+      threshold( &bird_label, 1e-9);
+      image bird_diff = image_diff( bird_label, result);
+      place_image( result, w,h, 0,0, debug);
+      place_image( bird_label, w,h, w+3, 0, debug);
+      place_image( bird_diff, w, h, 2*w+6, 0, debug);
+      bird_err += sum_array( bird_diff.data, w*h);
+      free_image( orig);
+      free_image( bird_label);
+      free_image( bird_diff);
+      strncpy( labelpath ,paths[n-4], 256);
+      find_replace(labelpath, "image", "label/jd", labelpath);
+      find_replace(labelpath, ".png", "_jd.png", labelpath);
+      orig = load_image_16( labelpath, 1);
+      image jd_label = crop_image(orig, 0, 0, w, h);
+      image jd_diff = image_diff( jd_label, jackdaws);
+      place_image( jackdaws, w,h, 0,h+3, debug);
+      place_image( jd_label, w,h, w+3, h+3, debug);
+      place_image( jd_diff, w, h, 2*w+6, h+3, debug);
+      jd_err += sum_array( jd_diff.data, w*h);
+      free_image( orig);
+      free_image( jd_label);
+      free_image( jd_diff);
+      strncpy( labelpath ,paths[n-4], 256);
+      find_replace(labelpath, "image", "label/rk", labelpath);
+      find_replace(labelpath, ".png", "_rk.png", labelpath);
+      orig = load_image_16( labelpath, 1);
+      image rk_label = crop_image(orig, 0, 0, w, h);
+      image rk_diff = image_diff( rk_label, rooks);
+      place_image( rooks, w,h, 0,2*h+6, debug);
+      place_image( rk_label, w,h, w+3, 2*h+6, debug);
+      place_image( rk_diff, w, h, 2*w+6, 2*h+6, debug);
+      rk_err += sum_array( rk_diff.data, w*h);
+      free_image( orig);
+      free_image( rk_label);
+      free_image( rk_diff);
+      char path[256];
+      sprintf( path, "debug/%d", get_current_batch(net));
+      mkdir( path, 0777);
+      char filename[256];
+      sprintf( filename, "%s/%s", path, basecfg( input));
+      save_image( debug, filename);
+      for( m = 0; m < num_frames; ++m)
+        free_image( im[m]);
+
+    }
+    printf( "=> Validating... (%d/%d)  error: Birdness:%12.6f  Jackdaw:%12.6f  Rook:%12.6f\n", d+1,  dlist->size, bird_err/num_files, jd_err/num_files, rk_err/num_files, what_time_is_it_now()-time );
+    free_image(result);
+    free_image(jackdaws);
+    free_image(rooks);
+    free_image(debug);
+    free_image( in);
+    free_ptrs((void**)paths, plist->size);
+    free_list(plist);
+  }
+  free_ptrs((void**)dirs, dlist->size);
+  free_list(dlist);
+  free_network( net);
+  //free_image( pred);
+  printf( "\n===> Validation error: Birdness:%12.6f  Jackdaw:%12.6f  Rook:%12.6f  took: %lf seconds\n\n", bird_err/num_files, jd_err/num_files, rk_err/num_files, what_time_is_it_now()-time );
+  fprintf( valid_csv_file, "%12.6f, %12.6f, %12.6f", bird_err/num_files, jd_err/num_files, rk_err/num_files );
+  fclose(valid_csv_file);
+}
+
 void train_segmenter(char *datacfg, char *cfgfile, char *weightfile, int *gpus, int ngpus, int clear, int display)
 {
     int i;
-
+    int validation_batch = 0;
     float avg_loss = -1;
     char *base = basecfg(cfgfile);
     printf("%s\n", base);
@@ -59,6 +240,7 @@ void train_segmenter(char *datacfg, char *cfgfile, char *weightfile, int *gpus, 
 
     char *backup_directory = option_find_str(options, "backup", "/backup/");
     char *train_list = option_find_str(options, "train", "data/train.list");
+    char *validation_list = option_find_str(options, "valid", "data/valid.list");
 
     list *plist = get_paths(train_list);
     char **paths = (char **)list_to_array(plist);
@@ -89,10 +271,17 @@ void train_segmenter(char *datacfg, char *cfgfile, char *weightfile, int *gpus, 
     data train;
     data buffer;
     pthread_t load_thread;
+    pthread_t valid_thread;
     args.d = &buffer;
-    load_thread = load_data(args);
+    //load_thread = load_data(args);
 
     int epoch = (*net->seen)/N;
+    while( 1){
+        validation_batch = 30;
+        if(pthread_create(&valid_thread, 0, validate_thread, (void *)&validation_batch)) error("Validatioh thread creation failed");
+        printf("validating ....\n");
+        pthread_join(valid_thread, 0);
+    }
     while(get_current_batch(net) < net->max_batches || net->max_batches == 0){
         double time = what_time_is_it_now();
 
@@ -118,16 +307,23 @@ void train_segmenter(char *datacfg, char *cfgfile, char *weightfile, int *gpus, 
         printf("%ld, %.3f: %f, %f avg, %f rate, %lf seconds, %ld images\n", get_current_batch(net), (float)(*net->seen)/N, loss, avg_loss, get_current_rate(net), what_time_is_it_now()-time, *net->seen);
         fprintf( train_csv_file, ",%d,%f,%f,%f,%g\n", get_current_batch(net), (float)(*net->seen)/N, loss, avg_loss, get_current_rate(net));
         fflush( train_csv_file);
-        if(*net->seen/N > epoch){
+        //if(*net->seen/N > epoch){
+        if( get_current_batch(net)%20 == 0){
             epoch = *net->seen/N;
             char buff[256];
-            sprintf(buff, "%s/%s_%d.weights",backup_directory,base, epoch);
+            //sprintf(buff, "%s/%s_%d.weights",backup_directory,base, epoch);
+            sprintf(buff, "%s/%s_%d.weights",backup_directory,base, get_current_batch(net));
+            validation_batch = get_current_batch(net);
             save_weights(net, buff);
+            //pthread_join(valid_thread, 0);
+            if(pthread_create(&valid_thread, 0, validate_thread, (void *)&validation_batch)) error("Validatioh thread creation failed");
+            printf("validating ....\n");
+
         }
         if( get_current_batch(net)%10 == 0){
             // Reduced channels
             //image trth = float_to_image(net->w/div, net->h/div, 12, train.y.vals[net->batch*(net->subdivisions-1)]);
-            image trth = float_to_image(net->w/div, net->h/div, 6, train.y.vals[net->batch*(net->subdivisions-1)]);
+            image trth = float_to_image(net->w/div, net->h/div, 3, train.y.vals[net->batch*(net->subdivisions-1)]);
            // image tr = collapse_birds_layers( trth, 1);
            // save_image_16( tr, "truth");
             image im = collapse_image_layers( float_to_image(net->w, net->h, 9, train.X.vals[net->batch*(net->subdivisions-1)]), 1);
@@ -143,14 +339,16 @@ void train_segmenter(char *datacfg, char *cfgfile, char *weightfile, int *gpus, 
             //for debug:
             // Reduced channels
             //image spc = make_image( trth.w*3+6, trth.h*12+33, 3);
-            image spc = make_image( trth.w*3+6, trth.h*6+15, 3);
+            //image spc = make_image( trth.w*3+6, trth.h*6+15, 3);
+            image spc = make_image( trth.w*3+6, trth.h*3+6, 3);
             fill_image( spc, 1.);
             image tmp = make_empty_image(0,0,0);
             image masked_pred = make_image( pred.w, pred.h, 2);
             int ind_spc;
             // Reduced channels
             //for( ind_spc = 0; ind_spc <12; ind_spc++)
-            for( ind_spc = 0; ind_spc <6; ind_spc++)
+            //for( ind_spc = 0; ind_spc <6; ind_spc++)
+            for( ind_spc = 0; ind_spc <3; ind_spc++)
             {
                 image t = get_image_layer( trth, ind_spc);
                 tmp = bird_to_rgb( t, ind_spc);
@@ -168,7 +366,8 @@ void train_segmenter(char *datacfg, char *cfgfile, char *weightfile, int *gpus, 
             free_image( tmp);
             // Reduced channels
             //for( ind_spc = 1; ind_spc <12; ind_spc++)
-            for( ind_spc = 1; ind_spc <6; ind_spc++)
+            //for( ind_spc = 1; ind_spc <6; ind_spc++)
+            for( ind_spc = 1; ind_spc <3; ind_spc++)
             {
                 image t = get_image_layer( pred, ind_spc);
                 tmp = bird_to_rgb( t, ind_spc);
@@ -186,47 +385,47 @@ void train_segmenter(char *datacfg, char *cfgfile, char *weightfile, int *gpus, 
             //    free_image( t);
                 free_image( tmp);
             }
-            image gt_vote = hough_vote( trth, 3, 4, msk, 0, 0);
-            normalize_image( gt_vote);
-            //threshold( &gt_vote, 0.01);
-            save_image_16( gt_vote, "gtvote");
-            image p_vote = hough_vote( masked_pred, 0, 1, msk, 1,0 );
-            normalize_image( p_vote);
-            threshold( &p_vote, 0.03);
-            save_image_16( p_vote, "pvote");
+            //image gt_vote = hough_vote( trth, 3, 4, msk, 0, 0);
+            //normalize_image( gt_vote);
+            ////threshold( &gt_vote, 0.01);
+            //save_image_16( gt_vote, "gtvote");
+            //image p_vote = hough_vote( masked_pred, 0, 1, msk, 1,0 );
+            //normalize_image( p_vote);
+            //threshold( &p_vote, 0.03);
+            //save_image_16( p_vote, "pvote");
             save_image( msk, "birds");
             char f[128];
-            sprintf( f, "./fatBranch/%d", get_current_batch(net)/10);
+            sprintf( f, "./spicies/%d", get_current_batch(net)/10);
             save_image(spc, f);
             save_image(spc, "result");
-            image diff = make_image(trth.w, trth.h, 1);
-            for(i = 0; i < trth.h*trth.w; ++i){
-                diff.data[i] = fabs(fabs(trth.data[3*trth.w*trth.h+i])-fabs(trth.data[4*trth.w*trth.h+i]));
-            }
-            normalize_image( diff);
-            save_image_16( diff, "gt_diff");
-            for(i = 0; i < trth.h*trth.w; ++i){
-                diff.data[i] = fabs(trth.data[3*trth.w*trth.h+i])+fabs(trth.data[4*trth.w*trth.h+i]);
-            }
-            normalize_image( diff);
-            save_image_16( diff, "gt_sum");
-            for(i = 0; i < trth.h*trth.w; ++i){
-                diff.data[i] = fabs(fabs(masked_pred.data[i])-fabs(masked_pred.data[masked_pred.w*masked_pred.h+i]));
-            }
-            mul_cpu( diff.w*diff.h, msk.data, 1, diff.data, 1);
-            normalize_image( diff);
-            save_image_16( diff, "p_diff");
-            for(i = 0; i < trth.h*trth.w; ++i){
-                diff.data[i] = fabs(masked_pred.data[i])+fabs(masked_pred.data[masked_pred.w*masked_pred.h+i]);
-            }
-            mul_cpu( diff.w*diff.h, msk.data, 1, diff.data, 1);
-            normalize_image( diff);
-            save_image_16( diff, "p_sum");
-            free_image(diff);
+            //image diff = make_image(trth.w, trth.h, 1);
+            //for(i = 0; i < trth.h*trth.w; ++i){
+            //    diff.data[i] = fabs(fabs(trth.data[3*trth.w*trth.h+i])-fabs(trth.data[4*trth.w*trth.h+i]));
+            //}
+            //normalize_image( diff);
+            //save_image_16( diff, "gt_diff");
+            //for(i = 0; i < trth.h*trth.w; ++i){
+            //    diff.data[i] = fabs(trth.data[3*trth.w*trth.h+i])+fabs(trth.data[4*trth.w*trth.h+i]);
+            //}
+            //normalize_image( diff);
+            //save_image_16( diff, "gt_sum");
+            //for(i = 0; i < trth.h*trth.w; ++i){
+            //    diff.data[i] = fabs(fabs(masked_pred.data[i])-fabs(masked_pred.data[masked_pred.w*masked_pred.h+i]));
+            //}
+            //mul_cpu( diff.w*diff.h, msk.data, 1, diff.data, 1);
+            //normalize_image( diff);
+            //save_image_16( diff, "p_diff");
+            //for(i = 0; i < trth.h*trth.w; ++i){
+            //    diff.data[i] = fabs(masked_pred.data[i])+fabs(masked_pred.data[masked_pred.w*masked_pred.h+i]);
+            //}
+            //mul_cpu( diff.w*diff.h, msk.data, 1, diff.data, 1);
+            //normalize_image( diff);
+            //save_image_16( diff, "p_sum");
+            //free_image(diff);
             //-------------------------------
 
 
-           // free_image( tr);
+           // free_ispicies;
            // free_image( pr);
            // free_image( diff);
            // free_image( dist);
@@ -261,6 +460,12 @@ void train_segmenter(char *datacfg, char *cfgfile, char *weightfile, int *gpus, 
            // free_image( dist);
             sprintf(buff, "%s/%s.backup",backup_directory,base);
             save_weights(net, buff);
+          //  int btch = net->batch;
+          //  printf("validating ....\n");
+          //  double time = what_time_is_it_now();
+          //  validate_birds(net, validation_list ,valid_csv_file);
+          //  printf("%lf seconds\n", what_time_is_it_now()-time);
+          //  set_batch_network(net, btch);
         }
         free_data(train);
     }
@@ -528,6 +733,165 @@ void maskgt(char *datafile, char *cfg, char* prefix)
     free_image( im);
   }
   free_image( mask);
+}
+
+void validate_birds(network* net, char *filename, FILE* valid_csv_file)
+{
+  set_batch_network(net, 1);
+  
+  list *dlist = get_paths( filename);
+  char** dirs = (char **)list_to_array(dlist);
+  int d,n,m, w = 1920, h = 1056; //w = 2048, h = 2048;// w = 1920, h = 1080;
+  int num_files = 0;
+  double bird_err = 0, jd_err = 0, rk_err = 0;
+  for( d = 0; d < dlist->size; ++d)
+  {
+    char buff[256];
+    char *input = buff;
+    list *plist = get_paths(dirs[d]);
+    char **paths = (char **)list_to_array(plist);
+    image in = make_image( net->w, net->h, net->c);
+    image result = make_image( w, h, 1);
+    image jackdaws = make_image( w, h, 1);
+    image rooks = make_image( w, h, 1);
+    image debug = make_image( w*3+6, h*3+6, 1);
+    int num_frames = 9;
+    image im[ num_frames];
+    for( m = 0; m < num_frames; ++m)
+      im[m] = make_empty_image(0,0,0);
+    image sized = make_empty_image( 0,0,0);
+    image gray = make_empty_image( 0,0,0);
+    for( n=8; n < plist->size; ++n)
+    //for( n=17; n < plist->size; ++n)
+    {
+      fill_image( result, 0.);
+      fill_image( jackdaws, 0.);
+      fill_image( rooks, 0.);
+      int oi ,oj;
+      for( m = 0; m < num_frames; ++m)
+      {
+        strncpy(input, paths[n-m], 256);
+        im[m] = load_image_color(input, 0, 0);
+      }
+      for( oi = 0; oi < 2; ++oi)
+      {
+        for( oj = 0; oj < 1; oj++)
+        {
+         int dx, dy;
+          switch( oi)
+          {
+            case 0:
+              dx = 0;
+              break;
+
+            case 1:
+              dx = 864;
+              break;
+
+        //    case 2:
+        //      dx = 960;
+        //      break;
+          }
+          switch( oj)
+          {
+            case 0:
+              dy = 0;
+              break;
+
+         //   case 1:
+         //     dy = 120;
+         //     break;
+          }
+          for( m = 0; m < num_frames; ++m)
+          //for( m = 0; m < 18; m+=2)
+          {
+            sized = crop_image(im[m], dx, dy, net->w, net->h);
+            gray = grayscale_image( sized);
+            memcpy( in.data + m*in.h*in.w, gray.data, gray.h*gray.w*sizeof( float));
+            //memcpy( in.data + m*in.h*in.w*3, sized.data, 3*sized.h*sized.w*sizeof( float));
+            //memcpy( in.data + (m/2)*in.h*in.w*3, sized.data, 3*sized.h*sized.w*sizeof( float));
+            free_image( sized);
+            free_image( gray);
+          }
+          float *X = in.data;
+          network_predict(net, X);
+          image pred = get_network_image(net);
+          int ind_spc;
+          image msk = get_image_layer( pred, 0);
+          merge_images( msk, pred.w, pred.h,  dx, dy, result);
+          threshold( &msk, 0.15);
+          image tmp = get_image_layer( pred, 1);
+          mul_cpu( pred.w*pred.h, msk.data, 1, tmp.data, 1);
+          merge_images( tmp, pred.w, pred.h, dx, dy, jackdaws);
+          free_image(tmp);
+          tmp = get_image_layer( pred, 2);
+          mul_cpu( pred.w*pred.h, msk.data, 1, tmp.data, 1);
+          merge_images( tmp, pred.w, pred.h, dx, dy, rooks);
+          free_image(tmp);
+          free_image(msk);
+        }
+      }
+      num_files++;
+      char labelpath[256];
+      strncpy( labelpath ,paths[n-4], 256);
+      find_replace(labelpath, "image", "label/id", labelpath);
+      find_replace(labelpath, ".png", "_id.png", labelpath);
+      image orig = load_image_16( labelpath, 1);
+      image bird_label = crop_image(orig, 0, 0, w, h);
+      threshold( &bird_label, 1e-9);
+      image bird_diff = image_diff( bird_label, result);
+      place_image( result, w,h, 0,0, debug);
+      place_image( bird_label, w,h, w+3, 0, debug);
+      place_image( bird_diff, w, h, 2*w+6, 0, debug);
+      bird_err += sum_array( bird_diff.data, w*h);
+      free_image( orig);
+      free_image( bird_label);
+      free_image( bird_diff);
+      strncpy( labelpath ,paths[n-4], 256);
+      find_replace(labelpath, "image", "label/jd", labelpath);
+      find_replace(labelpath, ".png", "_jd.png", labelpath);
+      orig = load_image_16( labelpath, 1);
+      image jd_label = crop_image(orig, 0, 0, w, h);
+      image jd_diff = image_diff( jd_label, jackdaws);
+      place_image( jackdaws, w,h, 0,h+3, debug);
+      place_image( jd_label, w,h, w+3, h+3, debug);
+      place_image( jd_diff, w, h, 2*w+6, h+3, debug);
+      jd_err += sum_array( jd_diff.data, w*h);
+      free_image( orig);
+      free_image( jd_label);
+      free_image( jd_diff);
+      strncpy( labelpath ,paths[n-4], 256);
+      find_replace(labelpath, "image", "label/rk", labelpath);
+      find_replace(labelpath, ".png", "_rk.png", labelpath);
+      orig = load_image_16( labelpath, 1);
+      image rk_label = crop_image(orig, 0, 0, w, h);
+      image rk_diff = image_diff( rk_label, rooks);
+      place_image( rooks, w,h, 0,2*h+6, debug);
+      place_image( rk_label, w,h, w+3, 2*h+6, debug);
+      place_image( rk_diff, w, h, 2*w+6, 2*h+6, debug);
+      rk_err += sum_array( rk_diff.data, w*h);
+      free_image( orig);
+      free_image( rk_label);
+      free_image( rk_diff);
+      char path[256];
+      sprintf( path, "debug/%d", get_current_batch(net));
+      mkdir( path, 0777);
+      char filename[256];
+      sprintf( filename, "%s/%s", path, basecfg( input));
+      save_image( debug, filename);
+      for( m = 0; m < num_frames; ++m)
+        free_image( im[m]);
+
+    }
+    free_image(result);
+    free_image(jackdaws);
+    free_image(rooks);
+    free_image(debug);
+    free_image( in);
+    free_ptrs((void**)paths, plist->size);
+  }
+  printf( "=> Validation error: Birdness:%12.6f  Jackdaw:%12.6f  Rook:%12.6f\n", bird_err/num_files, jd_err/num_files, rk_err/num_files );
+  fprintf( valid_csv_file, "%12.6f, %12.6f, %12.6f", bird_err/num_files, jd_err/num_files, rk_err/num_files );
 }
 
 void segment_birds(char *datafile, char *cfg, char *weights, char *filename, int* gpus, char* prefix)

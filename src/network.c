@@ -499,7 +499,7 @@ float *network_predict(network *net, float *input)
     network orig = *net;
     net->input = input;
     net->truth = 0;
-    net->train = 1;
+    net->train = 0;
     net->delta = 0;
     forward_network(net);
     float *out = net->output;

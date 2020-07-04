@@ -52,6 +52,7 @@ void free_layer(layer l)
     if(l.r_cpu)              free(l.r_cpu);
     if(l.h_cpu)              free(l.h_cpu);
     if(l.binary_input)       free(l.binary_input);
+    if(l.loss)               free(l.loss);
 
 #ifdef GPU
     if(l.indexes_gpu)           cuda_free((float *)l.indexes_gpu);
@@ -93,5 +94,6 @@ void free_layer(layer l)
     if(l.rand_gpu)                cuda_free(l.rand_gpu);
     if(l.squared_gpu)             cuda_free(l.squared_gpu);
     if(l.norms_gpu)               cuda_free(l.norms_gpu);
+    if(l.loss_gpu)                cuda_free(l.loss_gpu);
 #endif
 }
