@@ -59,6 +59,10 @@ void scale_mask_gpu(int N, float * X, float mask_num, float * mask, float scale)
 void const_gpu(int N, float ALPHA, float *X, int INCX);
 void pow_gpu(int N, float ALPHA, float *X, int INCX, float *Y, int INCY);
 void mul_gpu(int N, float *X, int INCX, float *Y, int INCY);
+void threshold_gpu(int N, float* X, float VAL);
+void dist_gpu(int N, float *X, int INCX, float *Y, int INCY);
+void place_array_gpu( float* X, int wX, int hX, float* Y, int wY, int hY, int dx, int dy);
+void merge_array_gpu( float* X, int wX, int hX, float* Y, int wY, int hY, int dx, int dy);
 
 void mean_gpu(float *x, int batch, int filters, int spatial, float *mean);
 void variance_gpu(float *x, float *mean, int batch, int filters, int spatial, float *variance);

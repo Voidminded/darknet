@@ -455,12 +455,29 @@ __global__ void copy_kernel(int N,  float *X, int OFFX, int INCX, float *Y, int 
     if(i < N) Y[i*INCY + OFFY] = X[i*INCX + OFFX];
 }
 
+__global__ void merge_kernel(int N,  float *X, int OFFX, int INCX, float *Y, int OFFY, int INCY)
+{
+    int i = (blockIdx.x + blockIdx.y*gridDim.x) * blockDim.x + threadIdx.x;
+    if(i < N) Y[i*INCY + OFFY] = ( Y[i*INCY + OFFY] < 1e-9 ? X[i*INCX + OFFX] : 0.5*(Y[i*INCY + OFFY]+X[i*INCX + OFFX]));
+}
+
 __global__ void mul_kernel(int N, float *X, int INCX, float *Y, int INCY)
 {
     int i = (blockIdx.x + blockIdx.y*gridDim.x) * blockDim.x + threadIdx.x;
     if(i < N) Y[i*INCY] *= X[i*INCX];
 }
 
+__global__ void threshold_kernel(int N, float *X, float VAL)
+{
+    int i = (blockIdx.x + blockIdx.y*gridDim.x) * blockDim.x + threadIdx.x;
+    if(i < N) X[i] >= VAL ? X[i] = 1.0: X[i] = 0.0;
+}
+
+__global__ void dist_kernel(int N, float *X, int INCX, float *Y, int INCY)
+{
+    int i = (blockIdx.x + blockIdx.y*gridDim.x) * blockDim.x + threadIdx.x;
+    if(i < N) Y[i*INCY] = sqrtf( powf( X[i*INCX] -  Y[i*INCY], 2));
+}
 
 extern "C" void normalize_gpu(float *x, float *mean, float *variance, int batch, int filters, int spatial)
 {
@@ -607,6 +624,38 @@ extern "C" void copy_gpu(int N, float * X, int INCX, float * Y, int INCY)
 extern "C" void mul_gpu(int N, float * X, int INCX, float * Y, int INCY)
 {
     mul_kernel<<<cuda_gridsize(N), BLOCK>>>(N, X, INCX, Y, INCY);
+    check_error(cudaPeekAtLastError());
+}
+
+extern "C" void threshold_gpu(int N, float * X, float VAL)
+{
+    threshold_kernel<<<cuda_gridsize(N), BLOCK>>>(N, X, VAL);
+    check_error(cudaPeekAtLastError());
+}
+
+extern "C" void place_array_gpu( float* X, int wX, int hX, float* Y, int wY, int hY, int dx, int dy)
+{
+    int y;
+    for(y = 0; y < hX; ++y)
+        copy_gpu_offset(wX, X, y*wX, 1, Y, wY*(y+dy) + dx, 1);
+}
+
+extern "C" void merge_gpu_offset(int N, float * X, int OFFX, int INCX, float * Y, int OFFY, int INCY)
+{
+    merge_kernel<<<cuda_gridsize(N), BLOCK>>>(N, X, OFFX, INCX, Y, OFFY, INCY);
+    check_error(cudaPeekAtLastError());
+}
+
+extern "C" void merge_array_gpu( float* X, int wX, int hX, float* Y, int wY, int hY, int dx, int dy)
+{
+    int y;
+    for(y = 0; y < hX; ++y)
+        merge_gpu_offset(wX, X, y*wX, 1, Y, wY*(y+dy) + dx, 1);
+}
+
+extern "C" void dist_gpu(int N, float * X, int INCX, float * Y, int INCY)
+{
+    dist_kernel<<<cuda_gridsize(N), BLOCK>>>(N, X, INCX, Y, INCY);
     check_error(cudaPeekAtLastError());
 }
 

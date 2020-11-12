@@ -1121,6 +1121,57 @@ image crop_seg_gt_conf(image im, int dx, int dy, int w, int h, int* valid)
     return cropped;
 }
 
+image crop_seg_gt_8dof_real( int dx, int dy, int w, int h, int* valid, char* frame, int spc, int flip, float rad, float scale)
+{
+    int i, j;
+    image gt = make_image(w, h, 3);
+    char path[256];
+    sprintf( path, "%s", frame);
+
+    if( spc == 0)
+    {
+        find_replace(path, "Basler", "jd/Basler", path);
+        find_replace(path, ".tiff", "_jd.png", path);
+    }
+    else
+    {
+        find_replace(path, "Basler", "rk/Basler", path);
+        find_replace(path, ".tiff", "_rk.png", path);
+    }
+    image lb = load_image_16(path, 1);
+    image cropped_lb = crop_image( lb, dx, dy, w/scale, h/scale);
+    float *empty_w;
+    empty_w = calloc( cropped_lb.w, sizeof(float));
+    for(j = 0; j < cropped_lb.h; ++j){
+        *valid = memcmp( empty_w, cropped_lb.data+j*cropped_lb.w, cropped_lb.w*sizeof(float));
+        if( *valid != 0)
+            break;
+    }
+    if( *valid == 0)
+    {
+        free_image( cropped_lb);
+        free_image( lb);
+        free( empty_w);
+        return gt;
+    }
+    image sized = resize_image( cropped_lb, w, h);
+    //image sized = rotate_crop_image(lb, rad, scale, w, h, dx, dy, 1.0);
+    threshold( &sized, 0.5);
+    //printf(" chance is %d , file is %s\n", spc, path);
+    free_image( lb);
+    free_image( cropped_lb);
+    free( empty_w);
+    if(flip) flip_image(sized);
+    memcpy( gt.data, sized.data, w*h*sizeof( float));
+    // Jackdaw
+    if( spc == 0)
+      memcpy( gt.data + w*h, sized.data, w*h*sizeof( float));
+    else //Rook
+      memcpy( gt.data + 2*w*h, sized.data, w*h*sizeof( float));
+    free_image( sized);
+
+    return gt;
+}
 image crop_seg_gt_8dof_hdds( int dx, int dy, int w, int h, int* valid, int seq, int cam, int frame, int hdd)
 {
     int i, j;
@@ -2133,10 +2184,12 @@ image load_image_color(char *filename, int w, int h)
 image get_image_layer(image m, int l)
 {
     image out = make_image(m.w, m.h, 1);
-    int i;
-    for(i = 0; i < m.h*m.w; ++i){
-        out.data[i] = m.data[i+l*m.h*m.w];
-    }
+    memcpy( out.data, m.data+l*m.h*m.w, m.h*m.w*sizeof(float));
+   // int i;
+   // for(i = 0; i < m.h*m.w; ++i){
+   //     out.data[i] = m.data[i+l*m.h*m.w];
+   // }
+
     return out;
 }
 void print_image(image m)

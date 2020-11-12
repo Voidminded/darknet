@@ -450,6 +450,16 @@ layer get_network_detection_layer(network *net)
     return l;
 }
 
+void apply_mask_blassify( network *net)
+{
+  layer l = net->layers[net->n-1];
+  //cuda_push_array(l.output_gpu, mask.data, mask.w*mask.h);
+  threshold_gpu( l.w*l.h, l.output_gpu, 0.15);
+  mul_gpu( l.w*l.h, l.output_gpu, 1, l.output_gpu+l.w*l.h, 1);
+  mul_gpu( l.w*l.h, l.output_gpu, 1, l.output_gpu+2*(l.w*l.h), 1);
+  pull_network_output(net);
+}
+
 image get_network_image_layer(network *net, int i)
 {
     layer l = net->layers[i];
@@ -499,7 +509,7 @@ float *network_predict(network *net, float *input)
     network orig = *net;
     net->input = input;
     net->truth = 0;
-    net->train = 0;
+    net->train = 1;
     net->delta = 0;
     forward_network(net);
     float *out = net->output;

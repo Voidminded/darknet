@@ -1,8 +1,9 @@
 #include "data.h"
 #include "utils.h"
 #include "image.h"
+#include <blas.h>
 #include "cuda.h"
-
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -882,11 +883,167 @@ data load_data_seg_conf(int n, char **paths, int m, int w, int h, int classes, i
     return d;
 }
 
+data load_data_seg_seq_real(int n, int m, int w, int h, int classes, int min, int max, float angle, float aspect, float hue, float saturation, float exposure, int div, char** jdirs, int js, char** rdirs, int rs)
+{
+    int i,j;
+    data d = {0};
+    d.shallow = 0;
+    image orig;
+    image sized;
+
+    d.X.rows = n;
+    d.X.vals = calloc(d.X.rows, sizeof(float*));
+    d.X.cols = h*w*15;
+
+
+    d.y.rows = n;
+    // Reduced channels
+    //d.y.cols = h*w*12;
+    d.y.cols = h*w*3;
+    d.y.vals = calloc(d.X.rows, sizeof(float*));
+
+    int valid;
+    int chance;
+    list *plist;
+    for(i = 0; i < n; ++i)
+    {
+        valid = 0;
+        chance = rand()%10;
+        int flip = rand()%2;
+        image input = make_image(w, h, 15);
+        if( chance < 6)
+        {
+            int spc = chance%2;
+            if( spc == 0)
+              plist = get_paths(jdirs[rand()%js]);
+            else
+              plist = get_paths(rdirs[rand()%rs]);
+            char **paths = (char **)list_to_array(plist);
+            int tries = 0;
+            while(!valid)
+            {
+                int f = rand_int( 1, plist->size-15)+14;
+                float dhue = rand_uniform(-hue, hue);
+                float dsat = rand_scale(saturation);
+                float dexp = rand_scale(exposure);
+                float rad = rand_uniform(-angle, angle) * TWO_PI / 360.;
+                float scale = 1;//rand_uniform(1, 2);
+                int dx = rand_int(0, 2048 - w/scale);
+                int dy = rand_int(0, 2048 - h/scale);
+                //image sized_m = crop_seg_gt_8dof( dx, dy, w, h, &valid, s, c, f-4);
+                //image sized_m = crop_seg_gt_8dof_hdds( dx, dy, w, h, &valid, s, c, f-7, hdd);
+                image sized_m = crop_seg_gt_8dof_real( dx, dy, w, h, &valid, paths[f-7], spc, flip, rad, scale);
+                if( valid){
+                    d.y.vals[i] = sized_m.data;
+                    for( j = 0; j < 15; j++){
+                        orig = load_image_color( paths[f-j], 0, 0);
+
+                        //image cropped_orig = crop_image( orig, dx, dy w/scale, h/scale);
+                        //sized = crop_image(resized_orig, dx, dy, w, h);
+                        sized = crop_image(orig, dx, dy, w, h);
+                        //sized = rotate_crop_image(orig, rad, scale, w, h, dx, dy, 1.0);
+
+                        if(flip) flip_image(sized);
+
+                        distort_image(sized, dhue, dsat, dexp);
+                        image gray = grayscale_image( sized);
+                        //show_image( sized, "img", 1);
+                        memcpy( input.data + j*h*w, gray.data, h*w*sizeof( float));
+                        free_image(sized);
+                        free_image(orig);
+                        free_image(gray);
+                        //free_image(resized_orig);
+                    }
+                }
+                else{
+                    free_image( sized_m);
+                    tries++;
+                    if( tries >120)
+                    {
+                        printf("120 tries for %s\n", paths[0]);
+                        tries = 0;
+                        free_ptrs((void**)paths, plist->size);
+                        free_list(plist);
+                        if( spc == 0)
+                          plist = get_paths(jdirs[rand()%js]);
+                        else
+                          plist = get_paths(rdirs[rand()%rs]);
+                        paths = (char **)list_to_array(plist);
+                    }
+                }
+            }
+            d.X.vals[i] = input.data;
+            free_ptrs((void**)paths, plist->size);
+            free_list(plist);
+        }
+        else
+        {
+
+          int k;
+          image truth = make_image( w,h,3);
+          fill_image( input, 1.0);
+          for( k = 0; k < 4; ++k)
+          {
+            valid = 0;
+            while(!valid)
+            {
+              if( k==3)
+                normalize_image( input);
+              if( k == 0)
+                plist = get_paths(jdirs[rand()%js]);
+              else
+                plist = get_paths(rdirs[rand()%rs]);
+              char **paths = (char **)list_to_array(plist);
+              int f = rand_int( 1, plist->size-15)+14;
+              float dhue = rand_uniform(-hue, hue);
+              float dsat = rand_scale(saturation);
+              float dexp = rand_scale(exposure);
+              float scale = rand_uniform(1, 2);
+              int dx = rand_int(0, 2048 - w/scale);
+              int dy = rand_int(0, 2048 - h/scale);
+              image sized_m = crop_seg_gt_8dof_real( dx, dy, w, h, &valid, paths[f-7], k, flip, 0, scale);
+            //mul_cpu( w*h*3, sized_m.data, 1, truth.data, 1);
+              if( valid)
+              {
+                for( j = 0; j < w*h*3; ++j)
+                  truth.data[j] = fmax(truth.data[j], sized_m.data[j]);
+                free_image( sized_m);
+                for( j = 0; j < 15; j++){
+                  orig = load_image( paths[f-j], 0, 0, 1);
+                  //sized = rotate_crop_image(orig, 0, scale, w, h, dx, dy, 1.0);
+                  image cropped_orig = crop_image(orig, dx, dy, w/scale, h/scale);
+                  sized = resize_image( cropped_orig, w, h);
+                  if(flip) flip_image(sized);
+                  //distort_image(sized, dhue, dsat, dexp);
+                  //image gray = grayscale_image( sized);
+                  //mul_cpu( w*h, gray.data, 1, input.data + j*w*h, 1);
+                  mul_cpu( w*h, sized.data, 1, input.data + j*w*h, 1);
+                  free_image(sized);
+                  free_image(orig);
+                  //free_image(gray);
+                  free_image(cropped_orig);
+                }
+              }
+              else
+              {
+                free_image( sized_m);
+              }
+              free_ptrs((void**)paths, plist->size);
+              free_list(plist);
+            }
+          }
+          d.y.vals[i] = truth.data;
+          d.X.vals[i] = input.data;
+        }
+    }
+    return d;
+}
+
 data load_data_seg_seq(int n, int m, int w, int h, int classes, int min, int max, float angle, float aspect, float hue, float saturation, float exposure, int div)
 {
     int cams = 4;
     int seqs = 395;
-    int frames = 51;
+    int frames = 45;
     int hdds = 3;
     int i,j;
     data d = {0};
@@ -896,7 +1053,7 @@ data load_data_seg_seq(int n, int m, int w, int h, int classes, int min, int max
 
     d.X.rows = n;
     d.X.vals = calloc(d.X.rows, sizeof(float*));
-    d.X.cols = h*w*9;
+    d.X.cols = h*w*15;
 
 
     d.y.rows = n;
@@ -909,12 +1066,12 @@ data load_data_seg_seq(int n, int m, int w, int h, int classes, int min, int max
     for(i = 0; i < n; ++i)
     {
         valid = 0;
-        image input = make_image(w, h, 9);
+        image input = make_image(w, h, 15);
         while(!valid)
         {
             int c = rand()%cams;
             int s = rand()%seqs;
-            int f = rand()%frames + 9;
+            int f = rand()%frames + 15;
             int hdd = rand()%hdds;
             int dx = rand_int(0, 1920 - w);
             int dy = rand_int(0, 1080 - h);
@@ -927,16 +1084,16 @@ data load_data_seg_seq(int n, int m, int w, int h, int classes, int min, int max
             float dsat = rand_scale(saturation);
             float dexp = rand_scale(exposure);
             //image sized_m = crop_seg_gt_8dof( dx, dy, w, h, &valid, s, c, f-4);
-            image sized_m = crop_seg_gt_8dof_hdds( dx, dy, w, h, &valid, s, c, f-4, hdd);
+            image sized_m = crop_seg_gt_8dof_hdds( dx, dy, w, h, &valid, s, c, f-7, hdd);
             if( valid){
                 d.y.vals[i] = sized_m.data;
-                for( j = 0; j < 9; j++){
+                for( j = 0; j < 15; j++){
                     char path[256];
                     if( hdd == 0 )
                         sprintf( path, "/sata0/dataset/birdies/image/sequence_%d_cam_%d_frame_%d.png", s, c, f-j);
                     else if( hdd == 1)
                         sprintf( path, "/sata1/dataset/birdies/image/sequence_%d_cam_%d_frame_%d.png", s, c, f-j);
-                    else if( hdd = 2)
+                    else if( hdd == 2)
                         sprintf( path, "/local_home/dataset/birdies/birdgen/output/image/sequence_%d_cam_%d_frame_%d.png", s, c, f-j);
                     orig = load_image_color( path, 0, 0);
 
@@ -1416,7 +1573,7 @@ void *load_thread(void *ptr)
 //    } else if (a.type == SEGMENTATION_DATA){
 //        *a.d = load_data_seg_full(a.n, a.paths, a.m, a.w, a.h, a.classes, a.min, a.max, a.angle, a.aspect, a.hue, a.saturation, a.exposure, a.scale);
     } else if (a.type == SEGMENTATION_DATA){
-        *a.d = load_data_seg_seq(a.n, a.m, a.w, a.h, a.classes, a.min, a.max, a.angle, a.aspect, a.hue, a.saturation, a.exposure, a.scale);
+        *a.d = load_data_seg_seq_real(a.n, a.m, a.w, a.h, a.classes, a.min, a.max, a.angle, a.aspect, a.hue, a.saturation, a.exposure, a.scale, a.jackdaws, a.js, a.rooks, a.rs);
     } else if (a.type == REGION_DATA){
         *a.d = load_data_region(a.n, a.paths, a.m, a.w, a.h, a.num_boxes, a.classes, a.jitter, a.hue, a.saturation, a.exposure);
     } else if (a.type == DETECTION_DATA){

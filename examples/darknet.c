@@ -403,6 +403,36 @@ void visualize(char *cfgfile, char *weightfile)
 
 int main(int argc, char **argv)
 {
+  /*
+  char file[256];
+  sprintf( file, "/tmp/1.tiff");
+  image tmp = load_image_color( file, 0, 0);
+  //image im0 = grayscale_image( tmp);
+  image im0 = copy_image( tmp);
+  free_image( tmp);
+  sprintf( file, "/tmp/2.tiff");
+  tmp = load_image_color( file, 0, 0);
+  //image im1 = grayscale_image( tmp);
+  image im1 = copy_image( tmp);
+  free_image( tmp);
+  tmp = make_image( im0.w, im0.h, im0.c);
+  int i;
+  for( i = 0; i < im0.w*im0.h*im0.c; ++i)
+    tmp.data[i] = 0.5*(im0.data[i]+im1.data[i]);
+  save_image( tmp, "mean");
+  for( i = 0; i < im0.w*im0.h*im0.c; ++i)
+    tmp.data[i] = fmin(im0.data[i], im1.data[i]);
+  save_image( tmp, "min");
+  mul_cpu( im0.w*im0.h*im0.c, im0.data, 1, im1.data, 1);
+  save_image( im1, "mult");
+  normalize_image( im1);
+  save_image( im1, "mult_norm");
+  image sized = rotate_crop_image(im1, -0.2, 1.2, 1200, 1200, 2048-1200, 2018-1200, 1.0);
+  save_image( sized, "mult_norm_sized");
+
+  return 0;
+*/
+
 //    image im = load_image_16("/local_home/dataset/birdies/birdgen/output/label/rk/sequence_213_cam_3_frame_30_rk.png", 1);
 //    float *empty;
 //    empty = calloc( im.w, sizeof(float));

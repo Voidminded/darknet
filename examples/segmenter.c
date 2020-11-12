@@ -2,6 +2,7 @@
 #include <sys/time.h>
 #include <assert.h>
 #include <blas.h>
+#include <signal.h>
 #include "image.h"
 
 static float get_pixel(image m, int x, int y, int c)
@@ -16,63 +17,158 @@ static void set_pixel(image m, int x, int y, int c, float val)
     m.data[c*m.h*m.w + y*m.w + x] = val;
 }
 
-void* validate_thread(void* arg)//network* net, char *filename, FILE* valid_csv_file)
+void* load_image_thread(void* args)
 {
-  int* batch_number = (int *) arg;
-  cuda_set_device(0);
-  char* cfg[256];
-  sprintf( cfg, "spicies.cfg");
-  char* weights[256];
-  sprintf( weights, "backup/spicies_%d.weights", *batch_number);
-  network *net = load_network(cfg, weights, 0);
-  set_batch_network(net, 1);
-  image pred = get_network_image(net);
+  load_args* a = (load_args* ) args;
+  image im = load_image_color(a->path, 0, 0);
+  *(a->im) = im;
+  return 0;
+}
 
-  char filename[256];
-  sprintf( filename, "/local_home/dataset/birdies/birdgen/output/valid.txt");
+void* save_image_thread(void* args)
+{
+  load_args* a = (load_args* ) args;
+  save_image( *(a->im), a->path);
+  return 0;
+}
 
-  char valid_csv_name[256];
-  sprintf( valid_csv_name, "validation.csv");
+void validate_real_func(int batch_number, network* net, int first)
+{
+  int d,n,m, w = 2048, h = 2048;// w = 1920, h = 1080;
+  static char filename[256];
+  static char valid_csv_name[256];
+  static char** dirs;
+  static image in;
+  static list *dlist;
+  static image debug;
+  static image rgb_debug;
+  static image mask;
+  static int num_frames = 15;
+  static image im[ 15];// num_frames];
+  static float *label_gpu;
+  static float *rk_label_gpu;
+  static float *jd_label_gpu;
+  static float *pred_gpu;
+  static float *debug_gpu;
+  static float *jackdaws_gpu;
+  static float *rooks_gpu;
+  static image input_image;
+  static load_args args = {0};
+  static load_args rargs = {0};
+  static load_args jargs = {0};
+  static load_args sargs = {0};
+  static load_args rgbsargs = {0};
+  static pthread_t load_thread;
+  static pthread_t rk_load_thread;
+  static pthread_t jd_load_thread;
+  static pthread_t save_thread;
+  static pthread_t rgb_save_thread;
+  static image thread_im;
+  static image rk_thread_im;
+  static image jd_thread_im;
+  static char jd_labelpath[256];
+  static char rk_labelpath[256];
+  static char save_path[256];
+  static char rgb_save_path[256];
+  if( first != 0)
+  {
+    sprintf( filename, "/local_home/real.txt");
+    sprintf( valid_csv_name, "real_real_validation_15.csv");
+    dlist = get_paths( filename);
+    dirs = (char **)list_to_array(dlist);
+    rgb_debug = make_image( w, h, 3);
+    mask = make_image( w, h, 1);
+    debug = make_image( w*3+6, h*3+6, 1);
+    int ii,jj,kk,ll;
+    for( ii = 1; ii < 3; ++ii)
+      for( kk = 0; kk < 3; ++kk)
+        for( ll = 0; ll < h*3+6; ++ll)
+          set_pixel(debug, ii*w+3*(ii-1)+kk, ll, 0, 1.);
+    for( jj = 1; jj < 3; ++jj)
+      for( kk = 0; kk < w*3+6; ++kk)
+        for( ll = 0; ll < 3; ++ll)
+          set_pixel(debug, kk, jj*h+3*(jj-1)+ll, 0, 1.);
+    for( m = 0; m < num_frames; ++m)
+      im[m] = make_empty_image(0,0,0);
+    label_gpu = cuda_make_array( 0, w*h);
+    rk_label_gpu = cuda_make_array( 0, w*h);
+    jd_label_gpu = cuda_make_array( 0, w*h);
+    pred_gpu = cuda_make_array( 0, w*h);
+    jackdaws_gpu = cuda_make_array( 0, w*h);
+    rooks_gpu = cuda_make_array( 0, w*h);
+    debug_gpu = cuda_make_array( 0, (w*3+6)*(h*3+6));
+    input_image = make_image( w, h, num_frames);
+    args.im = &thread_im;
+    rargs.im = &rk_thread_im;
+    jargs.im = &jd_thread_im;
+    sargs.im = &debug;
+    rgbsargs.im = &rgb_debug;
+  }
   FILE *valid_csv_file = fopen(valid_csv_name,"a");
-
-  list *dlist = get_paths( filename);
-  char** dirs = (char **)list_to_array(dlist);
-  int d,n,m, w = 1920, h = 1024; //w = 2048, h = 2048;// w = 1920, h = 1080;
-  int num_files = 0;
+  int total_files = 0;
   double bird_err = 0, jd_err = 0, rk_err = 0;
-  double time = what_time_is_it_now();
   for( d = 0; d < dlist->size; ++d)
   {
+    double time = what_time_is_it_now();
+    double jd_single_err = 0, rk_single_err = 0, bird_single_err = 0;
+    int num_files = 0;
     char buff[256];
     char *input = buff;
     list *plist = get_paths(dirs[d]);
     char **paths = (char **)list_to_array(plist);
-    image in = make_image( net->w, net->h, net->c);
-    image result = make_image( w, h, 1);
-    image jackdaws = make_image( w, h, 1);
-    image rooks = make_image( w, h, 1);
-    image debug = make_image( w*3+6, h*3+6, 1);
-    int num_frames = 9;
-    image im[ num_frames];
-    for( m = 0; m < num_frames; ++m)
-      im[m] = make_empty_image(0,0,0);
-    image sized = make_empty_image( 0,0,0);
-    image gray = make_empty_image( 0,0,0);
-    for( n=8; n < plist->size; ++n)
-    //for( n=17; n < plist->size; ++n)
+    for( n=14; n < plist->size; ++n)
     {
-      fill_image( result, 0.);
-      fill_image( jackdaws, 0.);
-      fill_image( rooks, 0.);
+      fill_gpu( w*h, 0, pred_gpu, 1);
+      fill_gpu( w*h, 0, jackdaws_gpu, 1);
+      fill_gpu( w*h, 0, rooks_gpu, 1);
       int oi ,oj;
-      for( m = 0; m < num_frames; ++m)
+      if( n==14)
       {
-        strncpy(input, paths[n-m], 256);
-        im[m] = load_image_color(input, 0, 0);
+        for( m = 0; m < num_frames; ++m)
+        {
+          strncpy(input, paths[n-m], 256);
+          image original_img = load_image_color(input, 0, 0);
+          im[m] = original_img;
+        }
+        if( n != plist->size-1)
+        {
+          args.path = paths[n+1];
+    //      pthread_join(load_thread, 0);
+          if(pthread_create(&load_thread, 0, load_image_thread, (void *)&args)) error("image load thread creation failed");
+          strncpy( jd_labelpath ,paths[n-7], 256);
+          find_replace(jd_labelpath, "images", "jd", jd_labelpath);
+          find_replace(jd_labelpath, ".tiff", "_jd.png", jd_labelpath);
+          jargs.path = jd_labelpath;
+    //      pthread_join(jd_load_thread, 0);
+          if(pthread_create(&jd_load_thread, 0, load_image_thread, (void *)&jargs)) error("jackdaw load thread creation failed");
+          strncpy( rk_labelpath ,paths[n-7], 256);
+          find_replace(rk_labelpath, "images", "rk", rk_labelpath);
+          find_replace(rk_labelpath, ".tiff", "_rk.png", rk_labelpath);
+          rargs.path = rk_labelpath;
+    //      pthread_join(rk_load_thread, 0);
+          if(pthread_create(&rk_load_thread, 0, load_image_thread, (void *)&rargs)) error("rook load thread creation failed");
+        }
       }
-      for( oi = 0; oi < 2; ++oi)
+      else
       {
-        for( oj = 0; oj < 1; oj++)
+        for( m = num_frames-1; m > 0; --m)
+          memcpy( im[m].data, im[m-1].data, im[m].h*im[m].w*sizeof( float));
+        pthread_join(load_thread, 0);
+        strncpy(input, paths[n], 256);
+//        image original_img = load_image_color(input, 0, 0);
+        free_image( im[0]);
+          im[0] = thread_im;
+          if( n != plist->size-1)
+          {
+            args.path = paths[n+1];
+            if(pthread_create(&load_thread, 0, load_image_thread, (void *)&args)) error("image lead thread creation failed");
+          }
+      }
+      for( m = 0; m < num_frames; ++m)
+        memcpy( input_image.data + m*input_image.w*input_image.h, im[m].data, im[m].h*im[m].w*sizeof( float));
+      for( oi = 0; oi < 3; ++oi)
+      {
+        for( oj = 0; oj < 3; oj++)
         {
          int dx, dy;
           switch( oi)
@@ -82,12 +178,13 @@ void* validate_thread(void* arg)//network* net, char *filename, FILE* valid_csv_
               break;
 
             case 1:
-              dx = 896;
+              dx = 560;
               break;
 
-        //    case 2:
-        //      dx = 960;
-        //      break;
+            case 2:
+              dx = 1120;
+              break;
+
           }
           switch( oj)
           {
@@ -95,106 +192,478 @@ void* validate_thread(void* arg)//network* net, char *filename, FILE* valid_csv_
               dy = 0;
               break;
 
-         //   case 1:
-         //     dy = 120;
-         //     break;
+            case 1:
+              dy = 560;
+              break;
+
+            case 2:
+              dy = 1120;
+              break;
           }
-          for( m = 0; m < num_frames; ++m)
-          //for( m = 0; m < 18; m+=2)
-          {
-            sized = crop_image(im[m], dx, dy, net->w, net->h);
-            gray = grayscale_image( sized);
-            memcpy( in.data + m*in.h*in.w, gray.data, gray.h*gray.w*sizeof( float));
-            //memcpy( in.data + m*in.h*in.w*3, sized.data, 3*sized.h*sized.w*sizeof( float));
-            //memcpy( in.data + (m/2)*in.h*in.w*3, sized.data, 3*sized.h*sized.w*sizeof( float));
-            free_image( sized);
-            free_image( gray);
-          }
-          float *X = in.data;
-          network_predict(net, X);
-          int ind_spc;
-          image msk = get_image_layer( pred, 0);
-          merge_images( msk, pred.w, pred.h,  dx, dy, result);
-          threshold( &msk, 0.15);
-          image tmp = get_image_layer( pred, 1);
-          mul_cpu( pred.w*pred.h, msk.data, 1, tmp.data, 1);
-          merge_images( tmp, pred.w, pred.h, dx, dy, jackdaws);
-          free_image(tmp);
-          tmp = get_image_layer( pred, 2);
-          mul_cpu( pred.w*pred.h, msk.data, 1, tmp.data, 1);
-          merge_images( tmp, pred.w, pred.h, dx, dy, rooks);
-          free_image(tmp);
-          free_image(msk);
+          in = crop_image( input_image, dx, dy, net->w, net->h);
+          network_predict(net, in.data);
+          layer l = net->layers[net->n-1];
+          merge_array_gpu( l.output_gpu, l.w, l.h, pred_gpu, w, h, dx, dy);
+
+          threshold_gpu( l.w*l.h, l.output_gpu, 0.15);
+          mul_gpu( l.w*l.h, l.output_gpu, 1, l.output_gpu+l.w*l.h, 1);
+          mul_gpu( l.w*l.h, l.output_gpu, 1, l.output_gpu+2*(l.w*l.h), 1);
+          merge_array_gpu( l.output_gpu+l.w*l.h, l.w, l.h, jackdaws_gpu, w, h, dx, dy);
+
+          merge_array_gpu( l.output_gpu+2*(l.w*l.h), l.w, l.h, rooks_gpu, w, h, dx, dy);
+          free_image( in);
         }
       }
       num_files++;
-      char labelpath[256];
-      strncpy( labelpath ,paths[n-4], 256);
-      find_replace(labelpath, "image", "label/id", labelpath);
-      find_replace(labelpath, ".png", "_id.png", labelpath);
-      image orig = load_image_16( labelpath, 1);
-      image bird_label = crop_image(orig, 0, 0, w, h);
-      threshold( &bird_label, 1e-9);
-      image bird_diff = image_diff( bird_label, result);
-      place_image( result, w,h, 0,0, debug);
-      place_image( bird_label, w,h, w+3, 0, debug);
-      place_image( bird_diff, w, h, 2*w+6, 0, debug);
-      bird_err += sum_array( bird_diff.data, w*h);
-      free_image( orig);
-      free_image( bird_label);
-      free_image( bird_diff);
-      strncpy( labelpath ,paths[n-4], 256);
-      find_replace(labelpath, "image", "label/jd", labelpath);
-      find_replace(labelpath, ".png", "_jd.png", labelpath);
-      orig = load_image_16( labelpath, 1);
-      image jd_label = crop_image(orig, 0, 0, w, h);
-      image jd_diff = image_diff( jd_label, jackdaws);
-      place_image( jackdaws, w,h, 0,h+3, debug);
-      place_image( jd_label, w,h, w+3, h+3, debug);
-      place_image( jd_diff, w, h, 2*w+6, h+3, debug);
-      jd_err += sum_array( jd_diff.data, w*h);
-      free_image( orig);
-      free_image( jd_label);
+      total_files++;
+//      char labelpath[256];
+//      strncpy( labelpath ,paths[n-4], 256);
+//      find_replace(labelpath, "images", "jd", labelpath);
+//      find_replace(labelpath, ".tiff", "_jd.png", labelpath);
+    //  image orig = load_image_16( labelpath, 1);
+    //  image jd_label = crop_image(orig, 0, 0, w, h);
+      pthread_join(jd_load_thread, 0);
+      //image jd_label = jd_thread_im;
+      cuda_push_array( jd_label_gpu, jd_thread_im.data, w*h);
+      free_image( jd_thread_im);
+      if( n != plist->size-1)
+      {
+        strncpy( jd_labelpath ,paths[n-6], 256);
+        find_replace(jd_labelpath, "images", "jd", jd_labelpath);
+        find_replace(jd_labelpath, ".tiff", "_jd.png", jd_labelpath);
+        jargs.path = jd_labelpath;
+        if(pthread_create(&jd_load_thread, 0, load_image_thread, (void *)&jargs)) error("jackdaw load thread creation failed");
+      }
+      threshold_gpu( w*h, jd_label_gpu, 1e-9);
+      place_array_gpu( jackdaws_gpu, w, h, debug_gpu, debug.w, debug.h, 0, h+3);
+      cuda_pull_array( jackdaws_gpu, rgb_debug.data, w*h);
+      place_array_gpu( jd_label_gpu, w, h, debug_gpu, debug.w, debug.h, w+3, h+3);
+      dist_gpu( w*h, jd_label_gpu, 1, jackdaws_gpu, 1);
+      place_array_gpu( jackdaws_gpu, w, h, debug_gpu, debug.w, debug.h, 2*w+6, h+3);
+      image jd_diff = make_image( w, h, 1);
+      cuda_pull_array( jackdaws_gpu, jd_diff.data, w*h);
+      jd_single_err += sum_array( jd_diff.data, w*h);
+      //free_image( orig);
       free_image( jd_diff);
-      strncpy( labelpath ,paths[n-4], 256);
-      find_replace(labelpath, "image", "label/rk", labelpath);
-      find_replace(labelpath, ".png", "_rk.png", labelpath);
-      orig = load_image_16( labelpath, 1);
-      image rk_label = crop_image(orig, 0, 0, w, h);
-      image rk_diff = image_diff( rk_label, rooks);
-      place_image( rooks, w,h, 0,2*h+6, debug);
-      place_image( rk_label, w,h, w+3, 2*h+6, debug);
-      place_image( rk_diff, w, h, 2*w+6, 2*h+6, debug);
-      rk_err += sum_array( rk_diff.data, w*h);
-      free_image( orig);
-      free_image( rk_label);
+      //free_image( jd_label);
+  //    strncpy( labelpath ,paths[n-4], 256);
+  //    find_replace(labelpath, "images", "rk", labelpath);
+  //    find_replace(labelpath, ".tiff", "_rk.png", labelpath);
+  //    orig = load_image_16( labelpath, 1);
+  //    image rk_label = crop_image(orig, 0, 0, w, h);
+      pthread_join( rk_load_thread, 0);
+     // image rk_label = rk_thread_im;
+      cuda_push_array( rk_label_gpu, rk_thread_im.data, w*h);
+      free_image( rk_thread_im);
+      if( n != plist->size-1)
+      {
+        strncpy( rk_labelpath ,paths[n-6], 256);
+        find_replace(rk_labelpath, "images", "rk", rk_labelpath);
+        find_replace(rk_labelpath, ".tiff", "_rk.png", rk_labelpath);
+        rargs.path = rk_labelpath;
+        if(pthread_create(&rk_load_thread, 0, load_image_thread, (void *)&rargs)) error("rook load thread creation failed");
+      }
+      place_array_gpu( rooks_gpu, w, h, debug_gpu, debug.w, debug.h, 0, 2*h+6);
+      cuda_pull_array( rooks_gpu, rgb_debug.data+(2*w*h), w*h);
+      place_array_gpu( rk_label_gpu, w, h, debug_gpu, debug.w, debug.h, w+3, 2*h+6);
+      dist_gpu( w*h, rk_label_gpu, 1, rooks_gpu, 1);
+      place_array_gpu( rooks_gpu, w, h, debug_gpu, debug.w, debug.h, 2*w+6, 2*h+6);
+      image rk_diff = make_image( w, h, 1);
+      cuda_pull_array( rooks_gpu, rk_diff.data, w*h);
+      rk_single_err += sum_array( rk_diff.data, w*h);
+      //free_image( orig);
       free_image( rk_diff);
+      //free_image( rk_label);
+      char *base = basecfg( input);
+      pthread_join( rgb_save_thread, 0);
+      char rgb_path[256];
+      sprintf( rgb_path, "rgb_debug/real/pred/%d", get_current_batch(net));
+      mkdir( rgb_path, 0777);
+      sprintf( rgb_save_path, "%s/%s", rgb_path, base);
+      rgbsargs.path = rgb_save_path;
+      if(pthread_create(&rgb_save_thread, 0, save_image_thread, (void *)&rgbsargs)) error("pred RGB save thread creation failed");
+      copy_gpu( w*h, jd_label_gpu, 1, label_gpu, 1);
+      axpy_gpu( w*h, 1.0, rk_label_gpu, 1, label_gpu, 1);
+      place_array_gpu( pred_gpu, w, h, debug_gpu, debug.w, debug.h, 0, 0);
+      cuda_pull_array( pred_gpu, mask.data, w*h);
+      place_array_gpu( label_gpu, w, h, debug_gpu, debug.w, debug.h, w+3, 0);
+      dist_gpu( w*h, label_gpu, 1, pred_gpu, 1);
+      place_array_gpu( pred_gpu, w, h, debug_gpu, debug.w, debug.h, 2*w+6, 0);
+      image bird_diff = make_image( w, h, 1);
+      cuda_pull_array( pred_gpu, bird_diff.data, w*h);
+      bird_single_err += sum_array( bird_diff.data, w*h);
+      free_image( bird_diff);
+      char mask_path[256];
+      sprintf( mask_path, "rgb_debug/real/seg/%d", get_current_batch(net));
+      mkdir( mask_path, 0777);
+      sprintf( mask_path, "%s/%s", mask_path, base);
+      save_image(mask, mask_path);
+      pthread_join( save_thread, 0);
+      cuda_pull_array( debug_gpu, debug.data, debug.w*debug.h);
       char path[256];
-      sprintf( path, "debug/%d", get_current_batch(net));
+      sprintf( path, "real_debug/%d", get_current_batch(net));
       mkdir( path, 0777);
-      char filename[256];
-      sprintf( filename, "%s/%s", path, basecfg( input));
-      save_image( debug, filename);
-      for( m = 0; m < num_frames; ++m)
-        free_image( im[m]);
-
+      //char filename[256];
+      sprintf( save_path, "%s/%s", path, base);
+      sargs.path = save_path;
+      if(pthread_create(&save_thread, 0, save_image_thread, (void *)&sargs)) error("save thread creation failed");
+      //save_image( debug, filename);
+      pthread_join( rgb_save_thread, 0);
+      cuda_pull_array( jd_label_gpu, rgb_debug.data, w*h);
+      cuda_pull_array( rk_label_gpu, rgb_debug.data+(2*w*h), w*h);
+      sprintf( rgb_path, "rgb_debug/real/label/%d", get_current_batch(net));
+      mkdir( rgb_path, 0777);
+      sprintf( rgb_save_path, "%s/%s", rgb_path, base);
+      rgbsargs.path = rgb_save_path;
+      if(pthread_create(&rgb_save_thread, 0, save_image_thread, (void *)&rgbsargs)) error("label RGB save thread creation failed");
+      free( base);
+      if( n == plist->size-1)
+        for( m = 0; m < num_frames; ++m)
+          free_image( im[m]);
     }
-    printf( "=> Validating... (%d/%d)  error: Birdness:%12.6f  Jackdaw:%12.6f  Rook:%12.6f\n", d+1,  dlist->size, bird_err/num_files, jd_err/num_files, rk_err/num_files, what_time_is_it_now()-time );
-    free_image(result);
-    free_image(jackdaws);
-    free_image(rooks);
-    free_image(debug);
-    free_image( in);
+    jd_err += jd_single_err;
+    rk_err += rk_single_err;
+    bird_err += bird_single_err;
+    printf("\033[1;35m"); 
+    printf( "=> Validating... (%d/%d)  error: Birdness:%12.6f  Jackdaw:%12.6f  Rook:%12.6f  took: %lf seconds\n", d+1,  dlist->size, bird_single_err/num_files, jd_single_err/num_files, rk_single_err/num_files, what_time_is_it_now()-time );
+    printf("\033[0m");
+    fprintf( valid_csv_file, "=> Validating... (%d/%d)  error: Birdness:%12.6f  Jackdaw:%12.6f  Rook:%12.6f took: %lf seconds\n", d+1,  dlist->size, bird_single_err/num_files, jd_single_err/num_files, rk_single_err/num_files, what_time_is_it_now()-time );
     free_ptrs((void**)paths, plist->size);
     free_list(plist);
   }
-  free_ptrs((void**)dirs, dlist->size);
-  free_list(dlist);
-  free_network( net);
-  //free_image( pred);
-  printf( "\n===> Validation error: Birdness:%12.6f  Jackdaw:%12.6f  Rook:%12.6f  took: %lf seconds\n\n", bird_err/num_files, jd_err/num_files, rk_err/num_files, what_time_is_it_now()-time );
-  fprintf( valid_csv_file, "%12.6f, %12.6f, %12.6f", bird_err/num_files, jd_err/num_files, rk_err/num_files );
+  printf( "\n %d ===> Validation error: Birdness:%12.6f  Jackdaw:%12.6f  Rook:%12.6f\n\n", batch_number, bird_err/total_files, jd_err/total_files, rk_err/total_files);
+  fprintf( valid_csv_file, "%d %12.6f, %12.6f, %12.6f\n", batch_number, bird_err/total_files, jd_err/total_files, rk_err/total_files );
+  
   fclose(valid_csv_file);
+  return;
+}
+
+void* validate_thread(void* arg)//network* net, char *filename, FILE* valid_csv_file)
+{
+  int* batch_number = (int *) arg;
+  cuda_set_device(0);
+  char cfg[256];
+  sprintf( cfg, "spicies_real.cfg");
+  char weights[256];
+  sprintf( weights, "backup/spicies_real_%d.weights", *batch_number);
+  static network *net;
+  int d,n,m, w = 1920, h = 1080;//w = 1856, h = 928; //w = 2048, h = 2048;// w = 1920, h = 1080;
+  static char filename[256];
+  static char valid_csv_name[256];
+  static char** dirs;
+  static image in;
+  //static image result;
+  static list *dlist;
+  static image debug;
+  static image rgb_debug;
+  static image mask;
+  static int num_frames = 15;
+  static image im[ 15];// num_frames];
+  static float *label_gpu;
+  static float *rk_label_gpu;
+  static float *jd_label_gpu;
+  static float *pred_gpu;
+  static float *debug_gpu;
+  static float *jackdaws_gpu;
+  static float *rooks_gpu;
+  static image input_image;
+  static load_args args = {0};
+  static load_args rargs = {0};
+  static load_args jargs = {0};
+  static load_args sargs = {0};
+  static load_args rgbsargs = {0};
+  static pthread_t load_thread;
+  static pthread_t rk_load_thread;
+  static pthread_t jd_load_thread;
+  static pthread_t save_thread;
+  static pthread_t rgb_save_thread;
+  static image thread_im;
+  static image rk_thread_im;
+  static image jd_thread_im;
+  static char jd_labelpath[256];
+  static char rk_labelpath[256];
+  static char save_path[256];
+  static char rgb_save_path[256];
+  int first = 0;
+  if( net == 0)
+  {
+    net = load_network(cfg, weights, 0);
+    set_batch_network(net, 1);
+    sprintf( filename, "/local_home/dataset/birdies/birdgen/output/empty.txt");
+    sprintf( valid_csv_name, "validation_15.csv");
+    dlist = get_paths( filename);
+    dirs = (char **)list_to_array(dlist);
+    //in = make_image( net->w, net->h, net->c);
+   // result = make_image( w, h, 1);
+    rgb_debug = make_image( w, h, 3);
+    mask = make_image( w, h, 1);
+    debug = make_image( w*3+6, h*3+6, 1);
+    int ii,jj,kk,ll;
+    for( ii = 1; ii < 3; ++ii)
+      for( kk = 0; kk < 3; ++kk)
+        for( ll = 0; ll < h*3+6; ++ll)
+          set_pixel(debug, ii*w+3*(ii-1)+kk, ll, 0, 1.);
+    for( jj = 1; jj < 3; ++jj)
+      for( kk = 0; kk < w*3+6; ++kk)
+        for( ll = 0; ll < 3; ++ll)
+          set_pixel(debug, kk, jj*h+3*(jj-1)+ll, 0, 1.);
+    for( m = 0; m < num_frames; ++m)
+      im[m] = make_empty_image(0,0,0);
+    //static image gray = make_empty_image( 0,0,0);
+    label_gpu = cuda_make_array( 0, w*h);
+    rk_label_gpu = cuda_make_array( 0, w*h);
+    jd_label_gpu = cuda_make_array( 0, w*h);
+    pred_gpu = cuda_make_array( 0, w*h);
+    jackdaws_gpu = cuda_make_array( 0, w*h);
+    rooks_gpu = cuda_make_array( 0, w*h);
+    debug_gpu = cuda_make_array( 0, (w*3+6)*(h*3+6));
+    input_image = make_image( 1920, 1080, num_frames);
+    args.im = &thread_im;
+    rargs.im = &rk_thread_im;
+    jargs.im = &jd_thread_im;
+    sargs.im = &debug;
+    rgbsargs.im = &rgb_debug;
+    first = 3;
+  }
+  else
+      load_weights(net, weights);
+
+  FILE *valid_csv_file = fopen(valid_csv_name,"a");
+
+  int total_files = 0;
+  double bird_err = 0, jd_err = 0, rk_err = 0;
+  for( d = 0; d < dlist->size; ++d)
+  {
+    int num_files = 0;
+  double time = what_time_is_it_now();
+    double jd_single_err = 0, rk_single_err = 0, bird_single_err = 0;
+  char buff[256];
+  char *input = buff;
+    list *plist = get_paths(dirs[d]);
+    char **paths = (char **)list_to_array(plist);
+    for( n=14; n < plist->size; ++n)
+    //for( n=17; n < plist->size; ++n)
+    {
+     // memset( result.data, 0, w*h* sizeof( float));
+     // memset( jackdaws.data, 0, w*h* sizeof( float));
+     // memset( rooks.data, 0, w*h* sizeof( float));
+      fill_gpu( w*h, 0, pred_gpu, 1);
+      fill_gpu( w*h, 0, jackdaws_gpu, 1);
+      fill_gpu( w*h, 0, rooks_gpu, 1);
+      int oi ,oj;
+      if( n==14)
+      {
+        for( m = 0; m < num_frames; ++m)
+        {
+          strncpy(input, paths[n-m], 256);
+          //im[m] = load_image_color(input, 0, 0);
+          image original_img = load_image_color(input, 0, 0);
+          im[m] = grayscale_image( original_img);
+          free_image( original_img);
+        }
+        if( n != plist->size-1)
+        {
+          args.path = paths[n+1];
+          //pthread_join(load_thread, 0);
+          if(pthread_create(&load_thread, 0, load_image_thread, (void *)&args)) error("image load thread creation failed");
+          strncpy( jd_labelpath ,paths[n-7], 256);
+          find_replace(jd_labelpath, "image", "label/jd", jd_labelpath);
+          find_replace(jd_labelpath, ".png", "_jd.png", jd_labelpath);
+          jargs.path = jd_labelpath;
+          //pthread_join(jd_load_thread, 0);
+          if(pthread_create(&jd_load_thread, 0, load_image_thread, (void *)&jargs)) error("jackdaw load thread creation failed");
+          strncpy( rk_labelpath ,paths[n-7], 256);
+          find_replace(rk_labelpath, "image", "label/rk", rk_labelpath);
+          find_replace(rk_labelpath, ".png", "_rk.png", rk_labelpath);
+          rargs.path = rk_labelpath;
+          //pthread_join(rk_load_thread, 0);
+          if(pthread_create(&rk_load_thread, 0, load_image_thread, (void *)&rargs)) error("rook load thread creation failed");
+        }
+      }
+      else
+      {
+        for( m = num_frames-1; m > 0; --m)
+          memcpy( im[m].data, im[m-1].data, im[m].h*im[m].w*sizeof( float));
+        pthread_join(load_thread, 0);
+        strncpy(input, paths[n], 256);
+        free_image( im[0]);
+        im[0] = grayscale_image( thread_im);
+        free_image( thread_im);
+        if( n != plist->size-1)
+        {
+          args.path = paths[n+1];
+          if(pthread_create(&load_thread, 0, load_image_thread, (void *)&args)) error("image lead thread creation failed");
+        }
+      }
+      for( m = 0; m < num_frames; ++m)
+        memcpy( input_image.data + m*input_image.w*input_image.h, im[m].data, im[m].h*im[m].w*sizeof( float));
+      for( oi = 0; oi < 3; ++oi)
+      {
+        for( oj = 0; oj < 2; oj++)
+        {
+         int dx, dy;
+          switch( oi)
+          {
+            case 0:
+              dx = 0;
+              break;
+
+            case 1:
+              dx = 496;
+              break;
+
+            case 2:
+              dx = 992;
+              break;
+          }
+          switch( oj)
+          {
+            case 0:
+              dy = 0;
+              break;
+
+            case 1:
+              dy = 152;
+              break;
+          }
+          in = crop_image( input_image, dx, dy, net->w, net->h);
+          network_predict(net, in.data);
+          layer l = net->layers[net->n-1];
+          merge_array_gpu( l.output_gpu, l.w, l.h, pred_gpu, w, h, dx, dy);
+
+          threshold_gpu( l.w*l.h, l.output_gpu, 0.15);
+          mul_gpu( l.w*l.h, l.output_gpu, 1, l.output_gpu+l.w*l.h, 1);
+          mul_gpu( l.w*l.h, l.output_gpu, 1, l.output_gpu+2*(l.w*l.h), 1);
+          merge_array_gpu( l.output_gpu+l.w*l.h, l.w, l.h, jackdaws_gpu, w, h, dx, dy);
+
+          merge_array_gpu( l.output_gpu+2*(l.w*l.h), l.w, l.h, rooks_gpu, w, h, dx, dy);
+          free_image( in);
+        }
+      }
+      num_files++;
+      total_files++;
+   //   char labelpath[256];
+   //   strncpy( labelpath ,paths[n-4], 256);
+   //   find_replace(labelpath, "image", "label/id", labelpath);
+   //   find_replace(labelpath, ".png", "_id.png", labelpath);
+   //   image orig = load_image_16( labelpath, 1);
+   //   image bird_label = crop_image(orig, 0, 0, w, h);
+      pthread_join(jd_load_thread, 0);
+      cuda_push_array( jd_label_gpu, jd_thread_im.data, w*h);
+      free_image( jd_thread_im);
+      if( n != plist->size-1)
+      {
+        strncpy( jd_labelpath ,paths[n-6], 256);
+        find_replace(jd_labelpath, "image", "label/jd", jd_labelpath);
+        find_replace(jd_labelpath, ".png", "_jd.png", jd_labelpath);
+        jargs.path = jd_labelpath;
+        if(pthread_create(&jd_load_thread, 0, load_image_thread, (void *)&jargs)) error("jackdaw load thread creation failed");
+      }
+      threshold_gpu( w*h, jd_label_gpu, 1e-9);
+      place_array_gpu( jackdaws_gpu, w, h, debug_gpu, debug.w, debug.h, 0, h+3);
+      cuda_pull_array( jackdaws_gpu, rgb_debug.data, w*h);
+      place_array_gpu( jd_label_gpu, w, h, debug_gpu, debug.w, debug.h, w+3, h+3);
+      dist_gpu( w*h, jd_label_gpu, 1, jackdaws_gpu, 1);
+      place_array_gpu( jackdaws_gpu, w, h, debug_gpu, debug.w, debug.h, 2*w+6, h+3);
+      image jd_diff = make_image( w, h, 1);
+      cuda_pull_array( jackdaws_gpu, jd_diff.data, w*h);
+      jd_single_err += sum_array( jd_diff.data, w*h);
+      //free_image( orig);
+      free_image( jd_diff);
+      //free_image( jd_label);
+  //    strncpy( labelpath ,paths[n-4], 256);
+  //    find_replace(labelpath, "images", "rk", labelpath);
+  //    find_replace(labelpath, ".tiff", "_rk.png", labelpath);
+  //    orig = load_image_16( labelpath, 1);
+  //    image rk_label = crop_image(orig, 0, 0, w, h);
+      pthread_join( rk_load_thread, 0);
+     // image rk_label = rk_thread_im;
+      cuda_push_array( rk_label_gpu, rk_thread_im.data, w*h);
+      free_image( rk_thread_im);
+      if( n != plist->size-1)
+      {
+        strncpy( rk_labelpath ,paths[n-6], 256);
+        find_replace(rk_labelpath, "image", "label/rk", rk_labelpath);
+        find_replace(rk_labelpath, ".png", "_rk.png", rk_labelpath);
+        rargs.path = rk_labelpath;
+        if(pthread_create(&rk_load_thread, 0, load_image_thread, (void *)&rargs)) error("rook load thread creation failed");
+      }
+      place_array_gpu( rooks_gpu, w, h, debug_gpu, debug.w, debug.h, 0, 2*h+6);
+      cuda_pull_array( rooks_gpu, rgb_debug.data+(2*w*h), w*h);
+      place_array_gpu( rk_label_gpu, w, h, debug_gpu, debug.w, debug.h, w+3, 2*h+6);
+      dist_gpu( w*h, rk_label_gpu, 1, rooks_gpu, 1);
+      place_array_gpu( rooks_gpu, w, h, debug_gpu, debug.w, debug.h, 2*w+6, 2*h+6);
+      image rk_diff = make_image( w, h, 1);
+      cuda_pull_array( rooks_gpu, rk_diff.data, w*h);
+      rk_single_err += sum_array( rk_diff.data, w*h);
+      char *base = basecfg( input);
+      pthread_join( rgb_save_thread, 0);
+      char rgb_path[256];
+      sprintf( rgb_path, "rgb_debug/sim/pred/%d", get_current_batch(net));
+      mkdir( rgb_path, 0777);
+      sprintf( rgb_save_path, "%s/%d_%s", rgb_path, d, base);
+      rgbsargs.path = rgb_save_path;
+      if(pthread_create(&rgb_save_thread, 0, save_image_thread, (void *)&rgbsargs)) error("pred RGB save thread creation failed");
+      //free_image( orig);
+      free_image( rk_diff);
+      //free_image( rk_label);
+      copy_gpu( w*h, jd_label_gpu, 1, label_gpu, 1);
+      axpy_gpu( w*h, 1.0, rk_label_gpu, 1, label_gpu, 1);
+      place_array_gpu( pred_gpu, w, h, debug_gpu, debug.w, debug.h, 0, 0);
+      cuda_pull_array( pred_gpu, mask.data, w*h);
+      place_array_gpu( label_gpu, w, h, debug_gpu, debug.w, debug.h, w+3, 0);
+      dist_gpu( w*h, label_gpu, 1, pred_gpu, 1);
+      place_array_gpu( pred_gpu, w, h, debug_gpu, debug.w, debug.h, 2*w+6, 0);
+      image bird_diff = make_image( w, h, 1);
+      cuda_pull_array( pred_gpu, bird_diff.data, w*h);
+      bird_single_err += sum_array( bird_diff.data, w*h);
+      free_image( bird_diff);
+      char mask_path[256];
+      sprintf( mask_path, "rgb_debug/sim/seg/%d", get_current_batch(net));
+      mkdir( mask_path, 0777);
+      sprintf( mask_path, "%s/%d_%s", mask_path, d, base);
+      save_image(mask, mask_path);
+      pthread_join( save_thread, 0);
+      cuda_pull_array( debug_gpu, debug.data, debug.w*debug.h);
+      char path[256];
+      sprintf( path, "debug/%d", get_current_batch(net));
+      mkdir( path, 0777);
+      //char filename[256];
+      //sprintf( filename, "%s/%s", path, base);
+      //save_image( debug, filename);
+      sprintf( save_path, "%s/%d_%s", path, d, base);
+      sargs.path = save_path;
+      if(pthread_create(&save_thread, 0, save_image_thread, (void *)&sargs)) error("save thread creation failed");
+      pthread_join( rgb_save_thread, 0);
+      cuda_pull_array( jd_label_gpu, rgb_debug.data, w*h);
+      cuda_pull_array( rk_label_gpu, rgb_debug.data+(2*w*h), w*h);
+      sprintf( rgb_path, "rgb_debug/sim/label/%d", get_current_batch(net));
+      mkdir( rgb_path, 0777);
+      sprintf( rgb_save_path, "%s/%d_%s", rgb_path, d, base);
+      rgbsargs.path = rgb_save_path;
+      if(pthread_create(&rgb_save_thread, 0, save_image_thread, (void *)&rgbsargs)) error("label RGB save thread creation failed");
+      free( base);
+      if( n == plist->size-1)
+        for( m = 0; m < num_frames; ++m)
+          free_image( im[m]);
+    }
+    jd_err += jd_single_err;
+    rk_err += rk_single_err;
+    bird_err += bird_single_err;
+    printf("\033[1;35m");
+    printf( "=> Validating... (%d/%d)  error: Birdness:%12.6f  Jackdaw:%12.6f  Rook:%12.6f  took: %lf seconds\n", d+1,  dlist->size, bird_single_err/num_files, jd_single_err/num_files, rk_single_err/num_files, what_time_is_it_now()-time );
+    printf("\033[0m");
+    fprintf( valid_csv_file, "=> Validating... (%d/%d)  error: Birdness:%12.6f  Jackdaw:%12.6f  Rook:%12.6f took: %lf seconds\n", d+1,  dlist->size, bird_single_err/num_files, jd_single_err/num_files, rk_single_err/num_files, what_time_is_it_now()-time );
+    free_ptrs((void**)paths, plist->size);
+    free_list(plist);
+  }
+  printf( "\n %d ===> Validation error: Birdness:%12.6f  Jackdaw:%12.6f  Rook:%12.6f\n\n", *batch_number, bird_err/total_files, jd_err/total_files, rk_err/total_files);
+  fprintf( valid_csv_file, "%d %12.6f, %12.6f, %12.6f\n", *batch_number, bird_err/total_files, jd_err/total_files, rk_err/total_files );
+  fclose(valid_csv_file);
+
+  validate_real_func( *batch_number, net, first);
+
+  return 0;
 }
 
 void train_segmenter(char *datacfg, char *cfgfile, char *weightfile, int *gpus, int ngpus, int clear, int display)
@@ -242,15 +711,26 @@ void train_segmenter(char *datacfg, char *cfgfile, char *weightfile, int *gpus, 
     char *train_list = option_find_str(options, "train", "data/train.list");
     char *validation_list = option_find_str(options, "valid", "data/valid.list");
 
+    char *j_list = "data/jackdaws";
+    char *r_list = "data/rooks";
+
+    list *jlist = get_paths(j_list);
+    list *rlist = get_paths(r_list);
+
+    char **jpaths = (char**)list_to_array(jlist);
+    char **rpaths = (char**)list_to_array(rlist);
+
+    printf("Jackdaws %d\n", jlist->size);
+    printf("Rooks %d\n", rlist->size);
+
     list *plist = get_paths(train_list);
     char **paths = (char **)list_to_array(plist);
-    printf("%d\n", plist->size);
-    int N = plist->size;
+    int N = 289735;///plist->size;
 
     load_args args = {0};
     args.w = net->w;
     args.h = net->h;
-    args.threads = 8;
+    args.threads = 16;
     args.scale = div;
 
     args.min = net->min_crop;
@@ -264,6 +744,10 @@ void train_segmenter(char *datacfg, char *cfgfile, char *weightfile, int *gpus, 
     args.classes = 1;
 
     args.paths = paths;
+    args.jackdaws = jpaths;
+    args.rooks = rpaths;
+    args.js = jlist->size;
+    args.rs = rlist->size;
     args.n = imgs;
     args.m = N;
     args.type = SEGMENTATION_DATA;
@@ -273,15 +757,15 @@ void train_segmenter(char *datacfg, char *cfgfile, char *weightfile, int *gpus, 
     pthread_t load_thread;
     pthread_t valid_thread;
     args.d = &buffer;
-    //load_thread = load_data(args);
+    load_thread = load_data(args);
 
     int epoch = (*net->seen)/N;
-    while( 1){
-        validation_batch = 30;
-        if(pthread_create(&valid_thread, 0, validate_thread, (void *)&validation_batch)) error("Validatioh thread creation failed");
-        printf("validating ....\n");
-        pthread_join(valid_thread, 0);
-    }
+  //  while( 1){
+  //      validation_batch = 1000;
+  //      if(pthread_create(&valid_thread, 0, validate_thread, (void *)&validation_batch)) error("Validatioh thread creation failed");
+  //      printf("validating ....\n");
+  //      pthread_join(valid_thread, 0);
+  //  }
     while(get_current_batch(net) < net->max_batches || net->max_batches == 0){
         double time = what_time_is_it_now();
 
@@ -289,7 +773,9 @@ void train_segmenter(char *datacfg, char *cfgfile, char *weightfile, int *gpus, 
         train = buffer;
         load_thread = load_data(args);
 
+        printf("\033[0;33m"); 
         printf("Loaded: %lf seconds\n", what_time_is_it_now()-time);
+        printf("\033[0m");
         time = what_time_is_it_now();
 
         float loss = 0;
@@ -304,18 +790,19 @@ void train_segmenter(char *datacfg, char *cfgfile, char *weightfile, int *gpus, 
 #endif
         if(avg_loss == -1) avg_loss = loss;
         avg_loss = avg_loss*.9 + loss*.1;
-        printf("%ld, %.3f: %f, %f avg, %f rate, %lf seconds, %ld images\n", get_current_batch(net), (float)(*net->seen)/N, loss, avg_loss, get_current_rate(net), what_time_is_it_now()-time, *net->seen);
+        printf("%ld, %.3f: %f, %f avg, %g rate, %lf seconds, %ld images\n", get_current_batch(net), (float)(*net->seen)/N, loss, avg_loss, get_current_rate(net), what_time_is_it_now()-time, *net->seen);
         fprintf( train_csv_file, ",%d,%f,%f,%f,%g\n", get_current_batch(net), (float)(*net->seen)/N, loss, avg_loss, get_current_rate(net));
         fflush( train_csv_file);
         //if(*net->seen/N > epoch){
-        if( get_current_batch(net)%20 == 0){
+        if( get_current_batch(net)%300 == 0 || get_current_batch(net)==1 ){
             epoch = *net->seen/N;
             char buff[256];
             //sprintf(buff, "%s/%s_%d.weights",backup_directory,base, epoch);
             sprintf(buff, "%s/%s_%d.weights",backup_directory,base, get_current_batch(net));
             validation_batch = get_current_batch(net);
             save_weights(net, buff);
-            //pthread_join(valid_thread, 0);
+            if( pthread_kill(valid_thread, 0) == 0)
+                pthread_join( valid_thread, 0);
             if(pthread_create(&valid_thread, 0, validate_thread, (void *)&validation_batch)) error("Validatioh thread creation failed");
             printf("validating ....\n");
 
@@ -324,11 +811,11 @@ void train_segmenter(char *datacfg, char *cfgfile, char *weightfile, int *gpus, 
             // Reduced channels
             //image trth = float_to_image(net->w/div, net->h/div, 12, train.y.vals[net->batch*(net->subdivisions-1)]);
             image trth = float_to_image(net->w/div, net->h/div, 3, train.y.vals[net->batch*(net->subdivisions-1)]);
-           // image tr = collapse_birds_layers( trth, 1);
-           // save_image_16( tr, "truth");
-            image im = collapse_image_layers( float_to_image(net->w, net->h, 9, train.X.vals[net->batch*(net->subdivisions-1)]), 1);
+            image tr = collapse_birds_layers( trth, 1);
+            save_image_16( tr, "truth");
+            image im = collapse_image_layers( float_to_image(net->w, net->h, net->c, train.X.vals[net->batch*(net->subdivisions-1)]), 1);
             save_image(im, "input");
-           // free_image( im);
+            free_image( im);
            // image pr = collapse_birds_layers(pred, 1);
            // save_image_16( pr, "pred");
            // image dist = image_distance( tr, pr);
@@ -341,7 +828,24 @@ void train_segmenter(char *datacfg, char *cfgfile, char *weightfile, int *gpus, 
             //image spc = make_image( trth.w*3+6, trth.h*12+33, 3);
             //image spc = make_image( trth.w*3+6, trth.h*6+15, 3);
             image spc = make_image( trth.w*3+6, trth.h*3+6, 3);
-            fill_image( spc, 1.);
+            int ii,jj,kk,ll;
+            for( ii = 1; ii < 3; ++ii)
+              for( kk = 0; kk < 3; ++kk)
+                for( ll = 0; ll < trth.h*3+6; ++ll)
+                {
+                  set_pixel(spc, ii*trth.w+3*(ii-1)+kk, ll, 0, 1.);
+                  set_pixel(spc, ii*trth.w+3*(ii-1)+kk, ll, 1, 1.);
+                  set_pixel(spc, ii*trth.w+3*(ii-1)+kk, ll, 2, 1.);
+                }
+            for( jj = 1; jj < 3; ++jj)
+              for( kk = 0; kk < trth.w*3+6; ++kk)
+                for( ll = 0; ll < 3; ++ll)
+                {
+                  set_pixel(spc, kk, jj*trth.h+3*(jj-1)+ll, 0, 1.);
+                  set_pixel(spc, kk, jj*trth.h+3*(jj-1)+ll, 1, 1.);
+                  set_pixel(spc, kk, jj*trth.h+3*(jj-1)+ll, 2, 1.);
+                }
+            //fill_image( spc, 1.);
             image tmp = make_empty_image(0,0,0);
             image masked_pred = make_image( pred.w, pred.h, 2);
             int ind_spc;
@@ -382,8 +886,8 @@ void train_segmenter(char *datacfg, char *cfgfile, char *weightfile, int *gpus, 
                 place_image( tmp, pred.w, pred.h,  pred.w+3, ind_spc*(pred.h+3), spc);
                 if( ind_spc ==3 || ind_spc == 4)
                   memcpy( masked_pred.data + (ind_spc-3)*pred.w*pred.h, t.data, t.h*t.w*sizeof( float));
-            //    free_image( t);
                 free_image( tmp);
+                free_image( t);
             }
             //image gt_vote = hough_vote( trth, 3, 4, msk, 0, 0);
             //normalize_image( gt_vote);
@@ -393,7 +897,7 @@ void train_segmenter(char *datacfg, char *cfgfile, char *weightfile, int *gpus, 
             //normalize_image( p_vote);
             //threshold( &p_vote, 0.03);
             //save_image_16( p_vote, "pvote");
-            save_image( msk, "birds");
+            //save_image( msk, "birds");
             char f[128];
             sprintf( f, "./spicies/%d", get_current_batch(net)/10);
             save_image(spc, f);
@@ -431,6 +935,7 @@ void train_segmenter(char *datacfg, char *cfgfile, char *weightfile, int *gpus, 
            // free_image( dist);
             free_image( spc);
             free_image( msk);
+            free_image( masked_pred);
             //free_image( gt_vote);
             //free_image( p_vote);
             //return;
@@ -733,6 +1238,299 @@ void maskgt(char *datafile, char *cfg, char* prefix)
     free_image( im);
   }
   free_image( mask);
+}
+
+void validate_real()
+{
+  int batch_number;
+  cuda_set_device(1);
+  char cfg[256];
+  sprintf( cfg, "spicies_birdchan.cfg");
+  char weights[256];
+  static network *net;
+  int d,n,m, w = 2048, h = 2048;// w = 1920, h = 1080;
+  static image pred;
+  static char filename[256];
+  static char valid_csv_name[256];
+  static char** dirs;
+  static image in;
+  static list *dlist;
+  static image jackdaws;
+  static image rooks;
+  static image debug;
+  static int num_frames = 9;
+  static image im[ 9];// num_frames];
+  static image sized;
+  static float *label_gpu;
+  static float *rk_label_gpu;
+  static float *jd_label_gpu;
+  static float *pred_gpu;
+  static float *debug_gpu;
+  static float *jackdaws_gpu;
+  static float *rooks_gpu;
+  static image input_image;
+  load_args args = {0};
+  load_args rargs = {0};
+  load_args jargs = {0};
+  load_args sargs = {0};
+  pthread_t load_thread;
+  pthread_t rk_load_thread;
+  pthread_t jd_load_thread;
+  pthread_t save_thread;
+  image thread_im;
+  image rk_thread_im;
+  image jd_thread_im;
+  args.im = &thread_im;
+  rargs.im = &rk_thread_im;
+  jargs.im = &jd_thread_im;
+  sargs.im = &debug;
+  char jd_labelpath[256];
+  char rk_labelpath[256];
+  char save_path[256];
+  char rgb_save_path[256];
+  net = parse_network_cfg( cfg);
+  set_batch_network(net, 1);
+  pred = get_network_image(net);
+  sprintf( filename, "/local_home/real.txt");
+  sprintf( valid_csv_name, "real_validation.csv");
+  dlist = get_paths( filename);
+  dirs = (char **)list_to_array(dlist);
+  jackdaws = make_image( w, h, 1);
+  rooks = make_image( w, h, 1);
+  debug = make_image( w*3+6, h*3+6, 1);
+  int ii,jj,kk,ll;
+  for( ii = 1; ii < 3; ++ii)
+    for( kk = 0; kk < 3; ++kk)
+      for( ll = 0; ll < h*3+6; ++ll)
+        set_pixel(debug, ii*w+3*(ii-1)+kk, ll, 0, 1.);
+  for( jj = 1; jj < 3; ++jj)
+    for( kk = 0; kk < w*3+6; ++kk)
+      for( ll = 0; ll < 3; ++ll)
+        set_pixel(debug, kk, jj*h+3*(jj-1)+ll, 0, 1.);
+  for( m = 0; m < num_frames; ++m)
+    im[m] = make_empty_image(0,0,0);
+  sized = make_empty_image( 0,0,0);
+  label_gpu = cuda_make_array( 0, w*h);
+  rk_label_gpu = cuda_make_array( 0, w*h);
+  jd_label_gpu = cuda_make_array( 0, w*h);
+  pred_gpu = cuda_make_array( 0, w*h);
+  jackdaws_gpu = cuda_make_array( 0, w*h);
+  rooks_gpu = cuda_make_array( 0, w*h);
+  debug_gpu = cuda_make_array( 0, (w*3+6)*(h*3+6));
+  input_image = make_image( w, h, num_frames);
+  FILE *valid_csv_file = fopen(valid_csv_name,"a");
+  for( batch_number = 52000; batch_number > 300; batch_number -= 1000)
+  {
+    sprintf( weights, "backup/spicies_birdchan_%d.weights", batch_number);
+    load_weights(net, weights);
+    int total_files = 0;
+    double bird_err = 0, jd_err = 0, rk_err = 0;
+    for( d = 0; d < dlist->size; ++d)
+    {
+      double time = what_time_is_it_now();
+      double jd_single_err = 0, rk_single_err = 0, bird_single_err = 0;
+      int num_files = 0;
+      char buff[256];
+      char *input = buff;
+      list *plist = get_paths(dirs[d]);
+      char **paths = (char **)list_to_array(plist);
+      for( n=8; n < plist->size; ++n)
+      {
+        fill_gpu( w*h, 0, pred_gpu, 1);
+        fill_gpu( w*h, 0, jackdaws_gpu, 1);
+        fill_gpu( w*h, 0, rooks_gpu, 1);
+        int oi ,oj;
+        if( n==8)
+        {
+          for( m = 0; m < num_frames; ++m)
+          {
+            strncpy(input, paths[n-m], 256);
+            image original_img = load_image_color(input, 0, 0);
+            im[m] = original_img;
+          }
+          if( n != plist->size-1)
+          {
+            args.path = paths[n+1];
+            pthread_join(load_thread, 0);
+            if(pthread_create(&load_thread, 0, load_image_thread, (void *)&args)) error("image load thread creation failed");
+            strncpy( jd_labelpath ,paths[n-4], 256);
+            find_replace(jd_labelpath, "images", "jd", jd_labelpath);
+            find_replace(jd_labelpath, ".tiff", "_jd.png", jd_labelpath);
+            jargs.path = jd_labelpath;
+            pthread_join(jd_load_thread, 0);
+            if(pthread_create(&jd_load_thread, 0, load_image_thread, (void *)&jargs)) error("jackdaw load thread creation failed");
+            strncpy( rk_labelpath ,paths[n-4], 256);
+            find_replace(rk_labelpath, "images", "rk", rk_labelpath);
+            find_replace(rk_labelpath, ".tiff", "_rk.png", rk_labelpath);
+            rargs.path = rk_labelpath;
+            pthread_join(rk_load_thread, 0);
+            if(pthread_create(&rk_load_thread, 0, load_image_thread, (void *)&rargs)) error("rook load thread creation failed");
+          }
+        }
+        else
+        {
+          for( m = num_frames-1; m > 0; --m)
+            memcpy( im[m].data, im[m-1].data, im[m].h*im[m].w*sizeof( float));
+            pthread_join(load_thread, 0);
+          strncpy(input, paths[n], 256);
+//          image original_img = load_image_color(input, 0, 0);
+          free_image( im[0]);
+ //         im[0] = original_img;
+            im[0] = thread_im;
+            if( n != plist->size-1)
+            {
+              args.path = paths[n+1];
+              if(pthread_create(&load_thread, 0, load_image_thread, (void *)&args)) error("image lead thread creation failed");
+            }
+        }
+        for( m = 0; m < num_frames; ++m)
+          memcpy( input_image.data + m*input_image.w*input_image.h, im[m].data, im[m].h*im[m].w*sizeof( float));
+        for( oi = 0; oi < 3; ++oi)
+        {
+          for( oj = 0; oj < 3; oj++)
+          {
+           int dx, dy;
+            switch( oi)
+            {
+              case 0:
+                dx = 0;
+                break;
+
+              case 1:
+                dx = 560;
+                break;
+
+              case 2:
+                dx = 1120;
+                break;
+
+            }
+            switch( oj)
+            {
+              case 0:
+                dy = 0;
+                break;
+
+              case 1:
+                dy = 560;
+                break;
+
+              case 2:
+                dy = 1120;
+                break;
+            }
+            in = crop_image( input_image, dx, dy, net->w, net->h);
+            network_predict(net, in.data);
+            layer l = net->layers[net->n-1];
+            merge_array_gpu( l.output_gpu, l.w, l.h, pred_gpu, w, h, dx, dy);
+
+            threshold_gpu( l.w*l.h, l.output_gpu, 0.15);
+            mul_gpu( l.w*l.h, l.output_gpu, 1, l.output_gpu+l.w*l.h, 1);
+            mul_gpu( l.w*l.h, l.output_gpu, 1, l.output_gpu+2*(l.w*l.h), 1);
+            merge_array_gpu( l.output_gpu+l.w*l.h, l.w, l.h, jackdaws_gpu, w, h, dx, dy);
+
+            merge_array_gpu( l.output_gpu+2*(l.w*l.h), l.w, l.h, rooks_gpu, w, h, dx, dy);
+            free_image( in);
+          }
+        }
+        num_files++;
+        total_files++;
+//        char labelpath[256];
+//        strncpy( labelpath ,paths[n-4], 256);
+//        find_replace(labelpath, "images", "jd", labelpath);
+//        find_replace(labelpath, ".tiff", "_jd.png", labelpath);
+      //  image orig = load_image_16( labelpath, 1);
+      //  image jd_label = crop_image(orig, 0, 0, w, h);
+        pthread_join(jd_load_thread, 0);
+        //image jd_label = jd_thread_im;
+        cuda_push_array( jd_label_gpu, jd_thread_im.data, w*h);
+        if( n != plist->size-1)
+        {
+          strncpy( jd_labelpath ,paths[n-3], 256);
+          find_replace(jd_labelpath, "images", "jd", jd_labelpath);
+          find_replace(jd_labelpath, ".tiff", "_jd.png", jd_labelpath);
+          jargs.path = jd_labelpath;
+          if(pthread_create(&jd_load_thread, 0, load_image_thread, (void *)&jargs)) error("jackdaw load thread creation failed");
+        }
+        threshold_gpu( w*h, jd_label_gpu, 1e-9);
+        place_array_gpu( jackdaws_gpu, w, h, debug_gpu, debug.w, debug.h, 0, h+3);
+        place_array_gpu( jd_label_gpu, w, h, debug_gpu, debug.w, debug.h, w+3, h+3);
+        dist_gpu( w*h, jd_label_gpu, 1, jackdaws_gpu, 1);
+        place_array_gpu( jackdaws_gpu, w, h, debug_gpu, debug.w, debug.h, 2*w+6, h+3);
+        image jd_diff = make_image( w, h, 1);
+        cuda_pull_array( jackdaws_gpu, jd_diff.data, w*h);
+        jd_single_err += sum_array( jd_diff.data, w*h);
+        //free_image( orig);
+        free_image( jd_diff);
+        //free_image( jd_label);
+        free_image( jd_thread_im);
+    //    strncpy( labelpath ,paths[n-4], 256);
+    //    find_replace(labelpath, "images", "rk", labelpath);
+    //    find_replace(labelpath, ".tiff", "_rk.png", labelpath);
+    //    orig = load_image_16( labelpath, 1);
+    //    image rk_label = crop_image(orig, 0, 0, w, h);
+        pthread_join( rk_load_thread, 0);
+       // image rk_label = rk_thread_im;
+        cuda_push_array( rk_label_gpu, rk_thread_im.data, w*h);
+        if( n != plist->size-1)
+        {
+          strncpy( rk_labelpath ,paths[n-3], 256);
+          find_replace(rk_labelpath, "images", "rk", rk_labelpath);
+          find_replace(rk_labelpath, ".tiff", "_rk.png", rk_labelpath);
+          rargs.path = rk_labelpath;
+          pthread_join(rk_load_thread, 0);
+          if(pthread_create(&rk_load_thread, 0, load_image_thread, (void *)&rargs)) error("rook load thread creation failed");
+        }
+        place_array_gpu( rooks_gpu, w, h, debug_gpu, debug.w, debug.h, 0, 2*h+6);
+        place_array_gpu( rk_label_gpu, w, h, debug_gpu, debug.w, debug.h, w+3, 2*h+6);
+        dist_gpu( w*h, rk_label_gpu, 1, rooks_gpu, 1);
+        place_array_gpu( rooks_gpu, w, h, debug_gpu, debug.w, debug.h, 2*w+6, 2*h+6);
+        image rk_diff = make_image( w, h, 1);
+        cuda_pull_array( rooks_gpu, rk_diff.data, w*h);
+        rk_single_err += sum_array( rk_diff.data, w*h);
+        //free_image( orig);
+        free_image( rk_diff);
+        //free_image( rk_label);
+        free_image( rk_thread_im);
+        copy_gpu( w*h, jd_label_gpu, 1, label_gpu, 1);
+        axpy_gpu( w*h, 1.0, rk_label_gpu, 1, label_gpu, 1);
+        place_array_gpu( pred_gpu, w, h, debug_gpu, debug.w, debug.h, 0, 0);
+        place_array_gpu( label_gpu, w, h, debug_gpu, debug.w, debug.h, w+3, 0);
+        dist_gpu( w*h, label_gpu, 1, pred_gpu, 1);
+        place_array_gpu( pred_gpu, w, h, debug_gpu, debug.w, debug.h, 2*w+6, 0);
+        image bird_diff = make_image( w, h, 1);
+        cuda_pull_array( pred_gpu, bird_diff.data, w*h);
+        bird_single_err += sum_array( bird_diff.data, w*h);
+        free_image( bird_diff);
+        pthread_join( save_thread, 0);
+        cuda_pull_array( debug_gpu, debug.data, debug.w*debug.h);
+        char path[256];
+        sprintf( path, "real_debug/%d", get_current_batch(net));
+        mkdir( path, 0777);
+        //char filename[256];
+        char *base = basecfg( input);
+        sprintf( save_path, "%s/%s", path, base);
+        sargs.path = save_path;
+        if(pthread_create(&save_thread, 0, save_image_thread, (void *)&sargs)) error("save thread creation failed");
+        //save_image( debug, filename);
+        free( base);
+        if( n == plist->size-1)
+          for( m = 0; m < num_frames; ++m)
+            free_image( im[m]);
+      }
+      jd_err += jd_single_err;
+      rk_err += rk_single_err;
+      bird_err += bird_single_err;
+      printf( "=> Validating... (%d/%d)  error: Birdness:%12.6f  Jackdaw:%12.6f  Rook:%12.6f  took: %lf seconds\n", d+1,  dlist->size, bird_single_err/num_files, jd_single_err/num_files, rk_single_err/num_files, what_time_is_it_now()-time );
+      fprintf( valid_csv_file, "=> Validating... (%d/%d)  error: Birdness:%12.6f  Jackdaw:%12.6f  Rook:%12.6f took: %lf seconds\n", d+1,  dlist->size, bird_single_err/num_files, jd_single_err/num_files, rk_single_err/num_files, what_time_is_it_now()-time );
+      free_ptrs((void**)paths, plist->size);
+      free_list(plist);
+    }
+    printf( "\n %d ===> Validation error: Birdness:%12.6f  Jackdaw:%12.6f  Rook:%12.6f\n\n", batch_number, bird_err/total_files, jd_err/total_files, rk_err/total_files);
+    fprintf( valid_csv_file, "%d %12.6f, %12.6f, %12.6f\n", batch_number, bird_err/total_files, jd_err/total_files, rk_err/total_files );
+  }
+  fclose(valid_csv_file);
+  return 0;
 }
 
 void validate_birds(network* net, char *filename, FILE* valid_csv_file)
@@ -1444,6 +2242,14 @@ void demo_segmenter(char *datacfg, char *cfg, char *weights, int cam_index, cons
 #endif
 }
 
+void validate_in_thread( )
+{
+  int validation_batch = 31000;
+  pthread_t valid_thread;
+  if(pthread_create(&valid_thread, 0, validate_thread, (void *)&validation_batch)) error("Validatioh thread creation failed");
+  printf("validating ....\n");
+  pthread_join(valid_thread, 0);
+}
 
 void run_segmenter(int argc, char **argv)
 {
@@ -1493,6 +2299,8 @@ void run_segmenter(int argc, char **argv)
     else if(0==strcmp(argv[2], "maskgt")) maskgt(data, cfg, prefix);
     else if(0==strcmp(argv[2], "maskgn")) maskgn(data, cfg, prefix);
     else if(0==strcmp(argv[2], "visualize")) predict_visualize_single_crop(data, cfg, weights, filename);
+    else if(0==strcmp(argv[2], "validate_real")) validate_real();
+    else if(0==strcmp(argv[2], "validate_in_thread")) validate_in_thread();
 }
 
 

@@ -555,9 +555,13 @@ typedef enum {
 typedef struct load_args{
     int threads;
     char **paths;
+    char **jackdaws;
+    char **rooks;
     char *path;
     int n;
     int m;
+    int js;
+    int rs;
     char **labels;
     int h;
     int w;
@@ -693,6 +697,7 @@ void load_weights(network *net, char *filename);
 void save_weights_upto(network *net, char *filename, int cutoff);
 void load_weights_upto(network *net, char *filename, int start, int cutoff);
 
+void apply_mask_blassify( network *net);
 void zero_objectness(layer l);
 void get_region_detections(layer l, int w, int h, int netw, int neth, float thresh, int *map, float tree_thresh, int relative, detection *dets);
 int get_yolo_detections(layer l, int w, int h, int netw, int neth, float thresh, int *map, int relative, detection *dets);
